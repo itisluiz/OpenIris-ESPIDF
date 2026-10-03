@@ -53,20 +53,31 @@ WiFiManager::WiFiManager(std::shared_ptr<ProjectConfig> deviceConfig, QueueHandl
 
 std::vector<uint8_t> WiFiManager::ParseBSSID(std::string_view bssid_string)
 {
-    return bssid_string
-           // We format the bssid/mac address as XX:XX:XX:XX:XX:XX
-           | std::views::split(':')
-           // Once we have that, we can convert each sub range into a proper uint8_t value
-           | std::views::transform(
-                 [](auto&& subrange) -> uint8_t
-                 {
-                     auto view = std::string_view(subrange);
-                     uint8_t result{};
-                     std::from_chars(view.begin(), view.end(), result, 16);
-                     return result;
-                 })
-           // and now group them into the vector we need
-           | std::ranges::to<std::vector<uint8_t>>();
+    // We format the bssid/mac address as XX:XX:XX:XX:XX:XX
+    // anything that isn't exactly 6 hex octets results in an empty vector, meaning we won't use the bssid
+    constexpr size_t BSSID_OCTETS = 6;
+    std::vector<uint8_t> bssid;
+    for (auto&& subrange : bssid_string | std::views::split(':'))
+    {
+        const auto view = std::string_view(subrange);
+        const auto view_end = view.data() + view.size();
+
+        uint8_t octet{};
+        const auto [parsed_end, error] = std::from_chars(view.data(), view_end, octet, 16);
+        if (view.empty() || error != std::errc() || parsed_end != view_end || bssid.size() == BSSID_OCTETS)
+        {
+            return {};
+        }
+
+        bssid.push_back(octet);
+    }
+
+    if (bssid.size() != BSSID_OCTETS)
+    {
+        return {};
+    }
+
+    return bssid;
 }
 
 void WiFiManager::SetCredentials(const char* ssid, const std::vector<uint8_t> bssid, const char* password, bool use_bssid)
@@ -84,8 +95,9 @@ void WiFiManager::SetCredentials(const char* ssid, const std::vector<uint8_t> bs
     memcpy(_wifi_cfg.sta.password, password, pass_len);
     _wifi_cfg.sta.password[pass_len] = '\0';
 
-    // if we can use bssid, just copy it. Parser makes sure we do not exceed 6 elements so we should be safe here
-    // if we fail to parse, the vec will be empty, so use_bssid won't be set
+    // only use the bssid if it's exactly as long as the field we're copying it into,
+    // the parser returns an empty vec for anything malformed, but let's not rely on that for memory safety
+    use_bssid = use_bssid && bssid.size() == sizeof(_wifi_cfg.sta.bssid);
     if (use_bssid)
     {
         std::copy(bssid.begin(), bssid.end(), _wifi_cfg.sta.bssid);
@@ -110,7 +122,7 @@ void WiFiManager::SetCredentials(const char* ssid, const std::vector<uint8_t> bs
 
     // OPTIMIZATION: Use fast scan instead of all channel scan for quicker connection
     _wifi_cfg.sta.scan_method = WIFI_FAST_SCAN;
-    _wifi_cfg.sta.bssid_set = use_bssid;  // Don't use specific BSSID
+    _wifi_cfg.sta.bssid_set = use_bssid;  // Only connect to the specific BSSID if one was provided
     _wifi_cfg.sta.channel = 0;            // Auto channel detection
 
     // Additional settings that might help with compatibility
