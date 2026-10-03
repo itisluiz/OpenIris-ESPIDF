@@ -74,3 +74,18 @@ CONFIG_GENERAL_INCLUDE_UVC_MODE=y
 # CONFIG_MONITORING_LED_CURRENT is not set
 CONFIG_GENERAL_BOARD="xiao_esp32s3"
 CONFIG_GENERAL_ENABLE_WIRELESS=y
+# Boot and connect quickly so the board is back on the stream soon after power comes back:
+# skip the 8 MB PSRAM test (~0.4 s) and log at 921600 instead of 115200, writing the boot log to the
+# UART console blocks and took ~2 s at 115200. A serial adapter on D6/D7 needs to be set to 921600.
+# CONFIG_SPIRAM_MEMTEST is not set
+# CONFIG_ESP_CONSOLE_UART_DEFAULT is not set
+CONFIG_ESP_CONSOLE_UART_CUSTOM=y
+CONFIG_ESP_CONSOLE_UART_CUSTOM_NUM_0=y
+CONFIG_ESP_CONSOLE_UART_TX_GPIO=43
+CONFIG_ESP_CONSOLE_UART_RX_GPIO=44
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=921600
+# Ask the DHCP server for the last address straight away instead of discovering one, and don't spend
+# a second probing it with ARP. Brings DHCP from ~3 s to under 0.1 s, best paired with a reservation on the router.
+CONFIG_LWIP_DHCP_RESTORE_LAST_IP=y
+# CONFIG_LWIP_DHCP_DOES_ARP_CHECK is not set
+CONFIG_LWIP_DHCP_DOES_NOT_CHECK_OFFERED_IP=y

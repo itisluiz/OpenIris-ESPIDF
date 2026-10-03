@@ -17,6 +17,8 @@ void WiFiManagerHelpers::event_handler(void* arg, esp_event_base_t event_base, i
     ESP_LOGI(WIFI_MANAGER_TAG, "Trying to connect, got event: %d", (int)event_id);
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START)
     {
+        // the driver only takes the TX power once started, and we don't rely on it surviving a restart
+        static_cast<WiFiManager*>(arg)->ApplyTxPower();
         if (const auto err = esp_wifi_connect(); err != ESP_OK)
         {
             ESP_LOGI(WIFI_MANAGER_TAG, "esp_wifi_connect() failed: %s", esp_err_to_name(err));
@@ -34,15 +36,19 @@ void WiFiManagerHelpers::event_handler(void* arg, esp_event_base_t event_base, i
         }
         else if (s_retry_num < EXAMPLE_ESP_MAXIMUM_RETRY)
         {
-            esp_wifi_connect();
             s_retry_num++;
             ESP_LOGI(WIFI_MANAGER_TAG, "retry to connect to the AP");
+            // When power is cut the router never sees us leave, so on the next boot it rejects our first
+            // association. Calling esp_wifi_connect() again then stalls for ~2.4 s before failing as well,
+            // restarting the driver instead lets the next attempt through right away (STA_START connects).
+            esp_wifi_stop();
+            esp_wifi_start();
         }
         else
         {
+            ESP_LOGI(WIFI_MANAGER_TAG, "connect to the AP fail");
             xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
         }
-        ESP_LOGI(WIFI_MANAGER_TAG, "connect to the AP fail");
     }
 
     else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP)
@@ -166,7 +172,6 @@ void WiFiManager::ConnectWithHardcodedCredentials()
 
     xQueueSend(this->eventQueue, &event, 10);
     esp_wifi_start();
-    this->ApplyTxPower();
 
     event.value = WiFiState_e::WiFiState_Connecting;
     xQueueSend(this->eventQueue, &event, 10);
@@ -214,7 +219,6 @@ void WiFiManager::ConnectWithStoredCredentials()
 
     // Stop WiFi once before the loop
     esp_wifi_stop();
-    vTaskDelay(pdMS_TO_TICKS(100));
 
     // Ensure we're in STA mode
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
@@ -240,7 +244,6 @@ void WiFiManager::ConnectWithStoredCredentials()
             ESP_LOGE(WIFI_MANAGER_TAG, "Failed to start WiFi: %s", esp_err_to_name(start_err));
             continue;
         }
-        this->ApplyTxPower();
 
         event.value = WiFiState_e::WiFiState_Connecting;
         xQueueSend(this->eventQueue, &event, 10);
@@ -454,7 +457,7 @@ void WiFiManager::Begin()
     wifi_init_config_t esp_wifi_init_config = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&esp_wifi_init_config));
 
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &WiFiManagerHelpers::event_handler, nullptr, &instance_any_id));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &WiFiManagerHelpers::event_handler, this, &instance_any_id));
     ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &WiFiManagerHelpers::event_handler, nullptr, &instance_got_ip));
 
     _wifi_cfg = {};
