@@ -97,12 +97,13 @@ void RestAPI::handle_request(struct mg_connection* connection, int event, void* 
 
         auto const base_request_params = this->routes.at(uri);
 
-        auto* context = new RequestContext{
+        // the request is handled synchronously, so the context can live on the stack
+        auto context = RequestContext{
             .connection = connection,
             .method = std::string(message->method.buf, message->method.len),
             .body = std::string(message->body.buf, message->body.len),
         };
-        this->handle_endpoint_command(context, base_request_params.allowed_method, base_request_params.command_type, base_request_params.success_code,
+        this->handle_endpoint_command(&context, base_request_params.allowed_method, base_request_params.command_type, base_request_params.success_code,
                                       base_request_params.error_code);
     }
 }
