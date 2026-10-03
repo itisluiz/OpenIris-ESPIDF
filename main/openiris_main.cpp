@@ -161,8 +161,13 @@ void force_activate_streaming()
 {
     // Delete the timer before it fires
     // since we've got called manually
-    esp_timer_delete(timerHandle);
-    timerHandle = nullptr;
+    // a running timer has to be stopped first, otherwise the delete fails and the timer would still fire later
+    if (timerHandle != nullptr)
+    {
+        esp_timer_stop(timerHandle);
+        esp_timer_delete(timerHandle);
+        timerHandle = nullptr;
+    }
     launch_streaming();
 }
 
