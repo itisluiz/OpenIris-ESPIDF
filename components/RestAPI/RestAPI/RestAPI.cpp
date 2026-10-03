@@ -139,5 +139,6 @@ void RestAPI::handle_endpoint_command(RequestContext* context, std::string allow
 
     const nlohmann::json result = command_manager->executeFromType(command_type, context->body);
     const auto code = getIsSuccess(result) ? success_code : error_code;
-    mg_http_reply(context->connection, code, JSON_RESPONSE, result.dump().c_str());
+    // the body goes through %s, it may contain '%' (e.g. in an SSID) which mongoose would treat as format directives
+    mg_http_reply(context->connection, code, JSON_RESPONSE, "%s", result.dump().c_str());
 }
