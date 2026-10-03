@@ -65,6 +65,9 @@ CONFIG_SPIRAM_SPEED_80M=y
 CONFIG_SPIRAM_SPEED=80
 CONFIG_SPIRAM_SPEED_80M=y
 # CONFIG_LED_EXTERNAL_CONTROL is not set
+# The LEDC timer that generates XCLK can't produce arbitrary frequencies this high, the frame rate
+# moves in steps rather than with the configured value. Measured at 240x240: 23 MHz gives 66 fps,
+# 21-22 MHz 56 fps and 20 MHz 49 fps, so this is the lowest setting that stays above 60 fps.
 CONFIG_CAMERA_USB_XCLK_FREQ=23000000
 CONFIG_GENERAL_INCLUDE_UVC_MODE=y
 # CONFIG_START_IN_UVC_MODE is not set
