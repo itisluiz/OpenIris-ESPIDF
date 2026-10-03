@@ -84,7 +84,8 @@ void HandleCDCSerialManagerTask(void* pvParameters)
 {
 #ifndef CONFIG_USE_UART_FOR_COMMUNICATION
     auto const commandManager = static_cast<CommandManager*>(pvParameters);
-    static char buffer[BUF_SIZE];
+    // +1 to always leave room for the null terminator
+    static char buffer[BUF_SIZE + 1];
     auto idx = 0;
 
     cdc_command_packet_t packet;
@@ -99,7 +100,7 @@ void HandleCDCSerialManagerTask(void* pvParameters)
                 // if we've got a new line, we've finished sending the commands, process them
                 if (idx >= BUF_SIZE || buffer[idx - 1] == '\n' || buffer[idx - 1] == '\r')
                 {
-                    buffer[idx - 1] = '\0';
+                    buffer[idx] = '\0';
                     const nlohmann::json result = commandManager->executeFromJson(std::string_view(reinterpret_cast<const char*>(buffer)));
                     const auto resultMessage = result.dump();
                     tud_cdc_write(resultMessage.c_str(), resultMessage.length());
