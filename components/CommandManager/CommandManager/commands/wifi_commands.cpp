@@ -1,6 +1,33 @@
 #include "wifi_commands.hpp"
+#include <cctype>
+#include <string_view>
 #include "esp_netif.h"
 #include "sdkconfig.h"
+
+// format is XX:XX:XX:XX:XX:XX, an empty string means we don't care about the BSSID
+static bool isValidBSSID(std::string_view bssid)
+{
+    if (bssid.empty())
+    {
+        return true;
+    }
+
+    if (bssid.length() != 17)
+    {
+        return false;
+    }
+
+    for (size_t i = 0; i < bssid.length(); i++)
+    {
+        const bool is_separator_position = i % 3 == 2;
+        if (is_separator_position ? bssid[i] != ':' : !std::isxdigit(static_cast<unsigned char>(bssid[i])))
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
 
 CommandResult setWiFiCommand(std::shared_ptr<DependencyRegistry> registry, const nlohmann::json& json)
 {
@@ -24,10 +51,8 @@ CommandResult setWiFiCommand(std::shared_ptr<DependencyRegistry> registry, const
         return CommandResult::getErrorResult("Invalid payload: missing SSID");
     }
 
-    // format is XX:XX:XX:XX:XX:XX
     const std::string bssid = payload.bssid.has_value() ? payload.bssid.value() : "";
-    const auto bssid_len = bssid.length();
-    if (bssid_len > 0 && bssid_len != 17)
+    if (!isValidBSSID(bssid))
     {
         return CommandResult::getErrorResult("BSSID is malformed");
     }
@@ -71,13 +96,9 @@ CommandResult updateWiFiCommand(std::shared_ptr<DependencyRegistry> registry, co
         return CommandResult::getErrorResult("Invalid payload - missing network name");
     }
 
-    if (payload.bssid.has_value())
+    if (payload.bssid.has_value() && !isValidBSSID(payload.bssid.value()))
     {
-        auto bssid_len = payload.bssid.value().length();
-        if (bssid_len > 0 && bssid_len != 11)
-        {
-            return CommandResult::getErrorResult("BSSID is malformed");
-        }
+        return CommandResult::getErrorResult("BSSID is malformed");
     }
 
     auto projectConfig = registry->resolve<ProjectConfig>(DependencyType::project_config);
