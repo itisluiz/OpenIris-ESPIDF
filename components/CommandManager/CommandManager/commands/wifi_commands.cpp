@@ -199,6 +199,8 @@ CommandResult getWiFiStatusCommand(std::shared_ptr<DependencyRegistry> registry)
         break;
     }
 
+    result["networks_configured"] = networks.size();
+
     if (wifiState == WiFiState_e::WiFiState_Connected)
     {
         // Get IP address from ESP32
