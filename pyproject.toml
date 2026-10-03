@@ -29,6 +29,10 @@ push = false
 "sdkconfig" = [
     'CONFIG_GENERAL_VERSION="{version}"',
 ]
+# CI regenerates sdkconfig from the board defaults, this is the one released firmware is built with
+"boards/sdkconfig.base_defaults" = [
+    'CONFIG_GENERAL_VERSION="{version}"',
+]
 
 [tool.pytest]
 testpaths = [
