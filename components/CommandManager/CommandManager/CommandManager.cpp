@@ -114,6 +114,11 @@ CommandManagerResponse CommandManager::executeFromJson(const std::string_view js
             return CommandManagerResponse({{"command", "Unknown command"}, {"error", "Missing command type"}});
         }
 
+        if (!commandData["command"].is_string())
+        {
+            return CommandManagerResponse({{"command", "Unknown command"}, {"error", "Command type must be a string"}});
+        }
+
         const auto commandName = commandData["command"].get<std::string>();
         if (!commandTypeMap.contains(commandName))
         {

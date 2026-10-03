@@ -9,6 +9,11 @@ CommandResult setWiFiCommand(std::shared_ptr<DependencyRegistry> registry, const
 #endif
 
     auto payload = json.get<WifiPayload>();
+    if (!payload.is_valid)
+    {
+        return CommandResult::getErrorResult("Invalid payload");
+    }
+
     if (payload.name.empty())
     {
         payload.name = std::string("main");
@@ -40,7 +45,7 @@ CommandResult deleteWiFiCommand(std::shared_ptr<DependencyRegistry> registry, co
 #endif
 
     const auto payload = json.get<deleteNetworkPayload>();
-    if (payload.name.empty())
+    if (!payload.is_valid || payload.name.empty())
         return CommandResult::getErrorResult("Invalid payload");
 
     auto projectConfig = registry->resolve<ProjectConfig>(DependencyType::project_config);
@@ -56,6 +61,11 @@ CommandResult updateWiFiCommand(std::shared_ptr<DependencyRegistry> registry, co
 #endif
 
     auto payload = json.get<UpdateWifiPayload>();
+    if (!payload.is_valid)
+    {
+        return CommandResult::getErrorResult("Invalid payload");
+    }
+
     if (payload.name.empty())
     {
         return CommandResult::getErrorResult("Invalid payload - missing network name");
@@ -94,6 +104,10 @@ CommandResult updateAPWiFiCommand(std::shared_ptr<DependencyRegistry> registry, 
 #endif
 
     const auto payload = json.get<UpdateAPWiFiPayload>();
+    if (!payload.is_valid)
+    {
+        return CommandResult::getErrorResult("Invalid payload");
+    }
 
     auto projectConfig = registry->resolve<ProjectConfig>(DependencyType::project_config);
     const auto previousAPConfig = projectConfig->getAPWifiConfig();

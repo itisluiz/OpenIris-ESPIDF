@@ -3,7 +3,7 @@
 CommandResult setMDNSCommand(std::shared_ptr<DependencyRegistry> registry, const nlohmann::json& json)
 {
     const auto payload = json.get<MDNSPayload>();
-    if (payload.hostname.empty())
+    if (!payload.is_valid || payload.hostname.empty())
         return CommandResult::getErrorResult("Invalid payload - empty hostname");
 
     std::shared_ptr<ProjectConfig> projectConfig = registry->resolve<ProjectConfig>(DependencyType::project_config);

@@ -22,7 +22,7 @@ CommandResult resetConfigCommand(std::shared_ptr<DependencyRegistry> registry, c
         "all",
     };
 
-    if (!json.contains("section"))
+    if (!json.contains("section") || !json["section"].is_string())
     {
         return CommandResult::getErrorResult("Invalid payload - missing section");
     }
