@@ -264,15 +264,34 @@ void WiFiManager::SetupAccessPoint()
 
     ESP_ERROR_CHECK(esp_wifi_init(&esp_wifi_ap_init_config));
 
-    wifi_config_t ap_wifi_config = {
-        .ap =
-            {
-                .ssid = CONFIG_WIFI_AP_SSID,
-                .password = CONFIG_WIFI_AP_PASSWORD,
-                .max_connection = 1,
+    const auto& apConfig = this->deviceConfig->getAPWifiConfig();
+    wifi_config_t ap_wifi_config = {};
 
-            },
-    };
+    const std::string ssid = apConfig.ssid.empty() ? std::string(CONFIG_WIFI_AP_SSID) : apConfig.ssid;
+    const size_t ssid_len = std::min(ssid.length(), sizeof(ap_wifi_config.ap.ssid));
+    memcpy(ap_wifi_config.ap.ssid, ssid.c_str(), ssid_len);
+    ap_wifi_config.ap.ssid_len = ssid_len;
+
+    // WPA2 requires 8 to 63 characters, anything else would make esp_wifi_set_config() fail and abort,
+    // so fall back to an open network instead of locking the user out of the device
+    const size_t pass_len = apConfig.password.length();
+    if (pass_len >= 8 && pass_len < sizeof(ap_wifi_config.ap.password))
+    {
+        memcpy(ap_wifi_config.ap.password, apConfig.password.c_str(), pass_len);
+        ap_wifi_config.ap.authmode = WIFI_AUTH_WPA2_PSK;
+    }
+    else
+    {
+        if (pass_len != 0)
+        {
+            ESP_LOGW(WIFI_MANAGER_TAG, "Stored AP password has an invalid length (%d), starting an open AP", (int)pass_len);
+        }
+        ap_wifi_config.ap.authmode = WIFI_AUTH_OPEN;
+    }
+
+    // channel 0 means no preference, valid channels are 1 to 13
+    ap_wifi_config.ap.channel = (apConfig.channel >= 1 && apConfig.channel <= 13) ? apConfig.channel : 1;
+    ap_wifi_config.ap.max_connection = 1;
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_wifi_config));

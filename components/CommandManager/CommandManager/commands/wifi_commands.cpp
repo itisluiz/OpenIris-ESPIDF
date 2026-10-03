@@ -133,9 +133,27 @@ CommandResult updateAPWiFiCommand(std::shared_ptr<DependencyRegistry> registry, 
     auto projectConfig = registry->resolve<ProjectConfig>(DependencyType::project_config);
     const auto previousAPConfig = projectConfig->getAPWifiConfig();
 
-    projectConfig->setAPWifiConfig(payload.ssid.has_value() ? payload.ssid.value() : previousAPConfig.ssid,
-                                   payload.password.has_value() ? payload.password.value() : previousAPConfig.password,
-                                   payload.channel.has_value() ? payload.channel.value() : previousAPConfig.channel);
+    const auto ssid = payload.ssid.has_value() ? payload.ssid.value() : previousAPConfig.ssid;
+    const auto password = payload.password.has_value() ? payload.password.value() : previousAPConfig.password;
+    const auto channel = payload.channel.has_value() ? payload.channel.value() : previousAPConfig.channel;
+
+    // these are the limits of the ESP soft-AP config, the AP is started from these values on the next boot
+    if (ssid.empty() || ssid.length() > 32)
+    {
+        return CommandResult::getErrorResult("Invalid payload - AP SSID must be between 1 and 32 characters");
+    }
+
+    if (!password.empty() && (password.length() < 8 || password.length() > 63))
+    {
+        return CommandResult::getErrorResult("Invalid payload - AP password must be empty or between 8 and 63 characters");
+    }
+
+    if (channel > 13)
+    {
+        return CommandResult::getErrorResult("Invalid payload - AP channel must be between 0 (auto) and 13");
+    }
+
+    projectConfig->setAPWifiConfig(ssid, password, channel);
 
     return CommandResult::getSuccessResult("Config updated");
 }
