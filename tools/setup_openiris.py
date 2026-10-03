@@ -604,12 +604,16 @@ def handle_menu(menu_context: dict | None = None) -> str:
 
 
 def valid_port(port: str):
-    if sys.platform == "windows":
+    # sys.platform is "win32" on every Windows version, including 64 bit ones
+    if sys.platform == "win32":
         if not port.startswith("COM"):
             raise argparse.ArgumentTypeError("Invalid port name. We only support COM ports")
     else:
-        if not port.startswith("/dev/tty"):
-            raise argparse.ArgumentTypeError("Invalid port name. Port must be in /dev/tty")
+        # /dev/cu.* is the preferred device on macOS, /dev/tty* everywhere else
+        if not port.startswith(("/dev/tty", "/dev/cu.")):
+            raise argparse.ArgumentTypeError(
+                "Invalid port name. Port must be a /dev/tty* or /dev/cu.* device"
+            )
     return port
 
 
