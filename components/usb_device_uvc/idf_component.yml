@@ -3,6 +3,9 @@ dependencies:
     version: "*"
   espressif/tinyusb:
     version: "=0.15.0~10"
+    # don't try to resolve tinyusb for targets without USB device support, see CMakeLists.txt
+    rules:
+      - if: "target in [esp32s2, esp32s3, esp32p4]"
   idf:
     version: ">=5.0"
 description: USB Device UVC, Streaming Video to Host
@@ -12,9 +15,7 @@ repository: git://github.com/espressif/esp-iot-solution.git
 repository_info:
   commit_sha: e2529ce3b0aa6362663b4c53d7e9ba21ff307f49
   path: components/usb/usb_device_uvc
-targets:
-  - esp32s2
-  - esp32s3
-  - esp32p4
+# no "targets:" list here: it makes the component manager reject the whole project on other targets.
+# CMakeLists.txt registers an empty component on targets without USB device support instead
 url: https://github.com/espressif/esp-iot-solution/tree/master/components/usb/usb_device_uvc
 version: 1.1.0
