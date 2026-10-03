@@ -115,9 +115,10 @@ class WiFiScanner:
         )
         # Convert timeout from seconds to milliseconds for the ESP
         timeout_ms = timeout * 1000
-        # Send timeout_ms in the command data AND as serial timeout
+        # give the device some headroom to send the response after its own scan timeout,
+        # otherwise a scan that takes the full time is reported as a timeout
         response = self.device.send_command(
-            "scan_networks", params={"timeout_ms": timeout_ms}, timeout=timeout
+            "scan_networks", params={"timeout_ms": timeout_ms}, timeout=timeout + 10
         )
         if has_command_failed(response):
             print(f"❌ Scan failed: {get_response_error(response)}")
@@ -155,7 +156,14 @@ def has_command_failed(result) -> bool:
 
 
 def get_response_error(result) -> str:
-    return result["results"][0]["result"]["data"]
+    # transport problems (timeouts, disconnects) and top level firmware errors come as {"error": ...},
+    # command failures as a result with an error status
+    if "error" in result:
+        return str(result["error"])
+    try:
+        return str(result["results"][0]["result"]["data"])
+    except (KeyError, IndexError, TypeError):
+        return str(result)
 
 
 def get_device_mode(device: OpenIrisDevice) -> dict:
@@ -169,7 +177,7 @@ def get_device_mode(device: OpenIrisDevice) -> dict:
 def get_led_duty_cycle(device: OpenIrisDevice) -> dict:
     command_result = device.send_command("get_led_duty_cycle")
     if has_command_failed(command_result):
-        print(f"❌ Failed to get LED duty cycle: {command_result['error']}")
+        print(f"❌ Failed to get LED duty cycle: {get_response_error(command_result)}")
         return {"duty_cycle": "unknown"}
     try:
         return {
@@ -186,7 +194,7 @@ def get_led_duty_cycle(device: OpenIrisDevice) -> dict:
 
 def get_mdns_name(device: OpenIrisDevice) -> dict:
     response = device.send_command("get_mdns_name")
-    if "error" in response:
+    if has_command_failed(response):
         print(f"❌ Failed to get device name: {get_response_error(response)}")
         return {"name": "unknown"}
 
@@ -272,7 +280,7 @@ def configure_device_name(device: OpenIrisDevice, *args, **kwargs):
         return
 
     response = device.send_command("set_mdns", {"hostname": name_choice})
-    if "error" in response:
+    if has_command_failed(response):
         print(f"❌ MDNS name setup failed: {get_response_error(response)}")
         return
 
@@ -283,7 +291,7 @@ def start_streaming(device: OpenIrisDevice, *args, **kwargs):
     print("🚀 Starting streaming mode...")
     response = device.send_command("start_streaming")
 
-    if "error" in response:
+    if has_command_failed(response):
         print(f"❌ Failed to start streaming: {get_response_error(response)}")
         return
 
@@ -311,8 +319,8 @@ def switch_device_mode_command(device: OpenIrisDevice, *args, **kwargs):
         return
 
     command_result = device.send_command("switch_mode", {"mode": mode})
-    if "error" in command_result:
-        print(f"❌ Failed to switch mode: {command_result['error']}")
+    if has_command_failed(command_result):
+        print(f"❌ Failed to switch mode: {get_response_error(command_result)}")
         return
 
     print(f"✅ Device mode switched to '{mode}' successfully!")
