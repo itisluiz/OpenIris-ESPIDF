@@ -63,7 +63,8 @@ def has_command_been_rejected(result) -> bool:
 
 
 def get_current_ports() -> list[str]:
-    return [port.name for port in serial.tools.list_ports.comports()]
+    # .device is the full path we can open (e.g. /dev/ttyACM0), .name is only the basename on Linux/macOS
+    return [port.device for port in serial.tools.list_ports.comports()]
 
 
 def get_new_port(old_ports, new_ports) -> str:
