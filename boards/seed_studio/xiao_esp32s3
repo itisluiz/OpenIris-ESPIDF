@@ -74,3 +74,8 @@ CONFIG_GENERAL_INCLUDE_UVC_MODE=y
 # CONFIG_MONITORING_LED_CURRENT is not set
 CONFIG_GENERAL_BOARD="xiao_esp32s3"
 CONFIG_GENERAL_ENABLE_WIRELESS=y
+# Ask the DHCP server for the last address straight away instead of discovering one, and don't spend
+# a second probing it with ARP. Brings DHCP from ~3 s to under 0.1 s, best paired with a reservation on the router.
+CONFIG_LWIP_DHCP_RESTORE_LAST_IP=y
+# CONFIG_LWIP_DHCP_DOES_ARP_CHECK is not set
+CONFIG_LWIP_DHCP_DOES_NOT_CHECK_OFFERED_IP=y
