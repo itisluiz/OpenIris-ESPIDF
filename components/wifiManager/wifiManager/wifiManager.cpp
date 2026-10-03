@@ -219,7 +219,6 @@ void WiFiManager::ConnectWithStoredCredentials()
 
     // Stop WiFi once before the loop
     esp_wifi_stop();
-    vTaskDelay(pdMS_TO_TICKS(100));
 
     // Ensure we're in STA mode
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
