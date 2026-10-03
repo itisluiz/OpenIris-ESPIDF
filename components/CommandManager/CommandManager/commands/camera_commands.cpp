@@ -15,5 +15,11 @@ CommandResult updateCameraCommand(std::shared_ptr<DependencyRegistry> registry, 
         payload.href.has_value() ? payload.href.value() : oldConfig.href, payload.quality.has_value() ? payload.quality.value() : oldConfig.quality,
         payload.brightness.has_value() ? payload.brightness.value() : oldConfig.brightness);
 
+    // apply right away so settings like the quality can be tuned while watching the stream
+    if (auto cameraManager = registry->resolve<CameraManager>(DependencyType::camera_manager))
+    {
+        cameraManager->loadConfigData();
+    }
+
     return CommandResult::getSuccessResult("Config updated");
 }

@@ -2,7 +2,16 @@ CONFIG_IDF_TARGET="esp32s3"
 CONFIG_IDF_TARGET_ESP32S3=y
 CONFIG_LED_DEBUG_GPIO=21
 CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
-CONFIG_ESP32S3_DEFAULT_CPU_FREQ_240=y
+# Streaming barely loads the CPU (the sensor encodes the JPEG and DMA captures it),
+# a lower clock runs cooler without affecting the frame rate (measured 66 fps at 80 MHz)
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_80=y
+# CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_160 is not set
+# CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240 is not set
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=80
+CONFIG_ESP32S3_DEFAULT_CPU_FREQ_80=y
+# CONFIG_ESP32S3_DEFAULT_CPU_FREQ_160 is not set
+# CONFIG_ESP32S3_DEFAULT_CPU_FREQ_240 is not set
+CONFIG_ESP32S3_DEFAULT_CPU_FREQ_MHZ=80
 CONFIG_ESP32S3_SPIRAM_SUPPORT=y
 CONFIG_SPIRAM_MODE_OCT=y
 # CONFIG_ESPTOOLPY_FLASHSIZE_1MB is not set
@@ -56,6 +65,9 @@ CONFIG_SPIRAM_SPEED_80M=y
 CONFIG_SPIRAM_SPEED=80
 CONFIG_SPIRAM_SPEED_80M=y
 # CONFIG_LED_EXTERNAL_CONTROL is not set
+# The LEDC timer that generates XCLK can't produce arbitrary frequencies this high, the frame rate
+# moves in steps rather than with the configured value. Measured at 240x240: 23 MHz gives 66 fps,
+# 21-22 MHz 56 fps and 20 MHz 49 fps, so this is the lowest setting that stays above 60 fps.
 CONFIG_CAMERA_USB_XCLK_FREQ=23000000
 CONFIG_GENERAL_INCLUDE_UVC_MODE=y
 # CONFIG_START_IN_UVC_MODE is not set

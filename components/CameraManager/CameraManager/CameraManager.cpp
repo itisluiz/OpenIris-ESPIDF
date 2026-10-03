@@ -188,16 +188,27 @@ bool CameraManager::setupCamera()
 #endif
 
     this->setupCameraSensor();
+    this->loadConfigData();
     return true;
 }
 
 void CameraManager::loadConfigData()
 {
+    // the camera failed to initialize, there's nothing to apply the settings to
+    if (camera_sensor == nullptr)
+    {
+        return;
+    }
+
     ESP_LOGD(CAMERA_MANAGER_TAG, "Loading camera config data");
     CameraConfig_t cameraConfig = projectConfig->getCameraConfig();
     this->setHFlip(cameraConfig.href);
     this->setVFlip(cameraConfig.vflip);
-    this->setCameraResolution(static_cast<framesize_t>(cameraConfig.framesize));
+    // the UVC descriptors only advertise 240x240, any other size would break the stream
+    if (projectConfig->getDeviceMode() != StreamingMode::UVC)
+    {
+        this->setCameraResolution(static_cast<framesize_t>(cameraConfig.framesize));
+    }
     camera_sensor->set_quality(camera_sensor, cameraConfig.quality);
     camera_sensor->set_agc_gain(camera_sensor, cameraConfig.brightness);
     ESP_LOGD(CAMERA_MANAGER_TAG, "Loading camera config data done");
