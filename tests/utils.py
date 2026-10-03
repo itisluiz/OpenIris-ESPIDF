@@ -52,6 +52,16 @@ def has_command_failed(result) -> bool:
     return "error" in result or result["results"][0]["result"]["status"] != "success"
 
 
+def has_command_been_rejected(result) -> bool:
+    """
+    Stricter than has_command_failed, the firmware has to actually answer with an error result.
+
+    has_command_failed also treats a timeout as a failure, which is exactly what we get
+    when a bad payload crashes and reboots the board instead of being rejected.
+    """
+    return "results" in result and result["results"][0]["result"]["status"] != "success"
+
+
 def get_current_ports() -> list[str]:
     return [port.name for port in serial.tools.list_ports.comports()]
 
