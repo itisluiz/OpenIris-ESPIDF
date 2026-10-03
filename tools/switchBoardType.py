@@ -1,4 +1,5 @@
 import os
+import re
 import difflib
 import argparse
 from typing import Dict, Optional, List
@@ -11,6 +12,11 @@ ENDC = "\033[0m"
 
 BOARDS_DIR_NAME = "boards"
 SDKCONFIG_DEFAULTS_FILENAME = "sdkconfig.base_defaults"
+
+# "# CONFIG_X is not set" lines disable an option, we store them under the option's key with this value
+# so a board disabling an option overrides the base's "CONFIG_X=y" instead of adding a second line for it
+NOT_SET = "<not set>"
+NOT_SET_PATTERN = re.compile(r"^#\s*(CONFIG_\w+) is not set$")
 
 
 def get_root_path() -> str:
@@ -138,13 +144,17 @@ def get_base_config_path() -> str:
 
 def parse_config(config_file) -> dict:
     config = {}
-    for line in config_file:
-        line = line.strip().split("=")
-        if len(line) == 2:
-            config[line[0]] = line[1]
+    for raw_line in config_file:
+        line = raw_line.strip()
+        if not_set := NOT_SET_PATTERN.match(line):
+            config[not_set.group(1)] = NOT_SET
+        elif line.startswith("#") or "=" not in line:
+            # other comments and empty lines carry no value, we're safe to store empty string there
+            config[line] = ""
         else:
-            # lines without value are usually comments, we're safe to store empty string there
-            config[line[0]] = ""
+            # values can contain '=' themselves (e.g. a WiFi password), only split on the first one
+            key, value = line.split("=", 1)
+            config[key.strip()] = value.strip()
     return config
 
 
@@ -233,7 +243,14 @@ def main():
         parsed_base_config = parse_config(base_config)
         parsed_board_config = parse_config(board_config)
 
-    new_board_config = {**parsed_base_config, **parsed_board_config}
+    # board values go after all base values instead of replacing them in place, a value written into the
+    # base's "Deprecated options" block (legacy option names) is ignored by kconfig when the new name is set
+    new_board_config = {
+        key: value
+        for key, value in parsed_base_config.items()
+        if key not in parsed_board_config
+    }
+    new_board_config.update(parsed_board_config)
     new_board_config = handle_wifi_config(new_board_config, parsed_main_config, args)
 
     if args.diff:
@@ -255,7 +272,9 @@ def main():
         print(f"{WARNING}Writing changes to main config file{ENDC}")
         with open(get_main_config_path(), "w") as main_config:
             for key, value in new_board_config.items():
-                if value:
+                if value == NOT_SET:
+                    main_config.write(f"# {key} is not set\n")
+                elif value:
                     main_config.write(f"{key}={value}\n")
                 else:
                     main_config.write(f"{key}\n")
