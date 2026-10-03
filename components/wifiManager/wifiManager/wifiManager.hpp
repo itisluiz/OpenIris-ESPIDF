@@ -20,6 +20,10 @@
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT BIT1
 
+// esp_wifi_set_max_tx_power() limits, in 0.25 dBm units (2 - 21 dBm)
+#define WIFI_TX_POWER_MIN 8
+#define WIFI_TX_POWER_MAX 84
+
 namespace WiFiManagerHelpers
 {
 void event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data);
@@ -53,6 +57,7 @@ class WiFiManager
     std::vector<WiFiNetwork> ScanNetworks(int timeout_ms = 15000);
     WiFiState_e GetCurrentWiFiState();
     void TryConnectToStoredNetworks();
+    esp_err_t ApplyTxPower();
 };
 
 #endif

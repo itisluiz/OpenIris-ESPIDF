@@ -18,4 +18,5 @@ CommandResult updateWiFiCommand(std::shared_ptr<DependencyRegistry> registry, co
 CommandResult updateAPWiFiCommand(std::shared_ptr<DependencyRegistry> registry, const nlohmann::json& json);
 
 CommandResult getWiFiStatusCommand(std::shared_ptr<DependencyRegistry> registry);
+CommandResult updateWiFiTxPowerCommand(std::shared_ptr<DependencyRegistry> registry, const nlohmann::json& json);
 CommandResult connectWiFiCommand(std::shared_ptr<DependencyRegistry> registry);

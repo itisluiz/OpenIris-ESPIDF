@@ -166,6 +166,7 @@ void WiFiManager::ConnectWithHardcodedCredentials()
 
     xQueueSend(this->eventQueue, &event, 10);
     esp_wifi_start();
+    this->ApplyTxPower();
 
     event.value = WiFiState_e::WiFiState_Connecting;
     xQueueSend(this->eventQueue, &event, 10);
@@ -239,6 +240,7 @@ void WiFiManager::ConnectWithStoredCredentials()
             ESP_LOGE(WIFI_MANAGER_TAG, "Failed to start WiFi: %s", esp_err_to_name(start_err));
             continue;
         }
+        this->ApplyTxPower();
 
         event.value = WiFiState_e::WiFiState_Connecting;
         xQueueSend(this->eventQueue, &event, 10);
@@ -375,6 +377,23 @@ std::vector<WiFiNetwork> WiFiManager::ScanNetworks(int timeout_ms)
 
     // If already in STA or APSTA mode, scan directly
     return wifiScanner->scanNetworks(timeout_ms);
+}
+
+esp_err_t WiFiManager::ApplyTxPower()
+{
+    // the driver only accepts this once started, before esp_wifi_start() the call fails and changes nothing
+    const auto power = std::clamp<uint8_t>(this->deviceConfig->getWiFiTxPowerConfig().power, WIFI_TX_POWER_MIN, WIFI_TX_POWER_MAX);
+    if (const auto err = esp_wifi_set_max_tx_power(static_cast<int8_t>(power)); err != ESP_OK)
+    {
+        ESP_LOGW(WIFI_MANAGER_TAG, "Failed to set the TX power to %u: %s", power, esp_err_to_name(err));
+        return err;
+    }
+
+    // the driver rounds to the steps the PHY supports, log what we actually got
+    int8_t applied = 0;
+    esp_wifi_get_max_tx_power(&applied);
+    ESP_LOGI(WIFI_MANAGER_TAG, "TX power set to %.2f dBm", applied * 0.25);
+    return ESP_OK;
 }
 
 WiFiState_e WiFiManager::GetCurrentWiFiState()

@@ -1,5 +1,6 @@
 #include "wifi_commands.hpp"
 #include <cctype>
+#include <format>
 #include <string_view>
 #include "esp_netif.h"
 #include "sdkconfig.h"
@@ -154,6 +155,38 @@ CommandResult updateAPWiFiCommand(std::shared_ptr<DependencyRegistry> registry, 
     }
 
     projectConfig->setAPWifiConfig(ssid, password, channel);
+
+    return CommandResult::getSuccessResult("Config updated");
+}
+
+CommandResult updateWiFiTxPowerCommand(std::shared_ptr<DependencyRegistry> registry, const nlohmann::json& json)
+{
+#if !CONFIG_GENERAL_ENABLE_WIRELESS
+    return CommandResult::getErrorResult("Not supported by current firmware");
+#endif
+
+    if (!json.contains("power") || !json["power"].is_number_integer())
+    {
+        return CommandResult::getErrorResult("Invalid payload - missing power");
+    }
+
+    // in 0.25 dBm units, same as get_config reports it
+    const auto power = json["power"].get<int>();
+    if (power < WIFI_TX_POWER_MIN || power > WIFI_TX_POWER_MAX)
+    {
+        return CommandResult::getErrorResult(std::format("Invalid payload - power must be between {} and {} (0.25 dBm units)", WIFI_TX_POWER_MIN, WIFI_TX_POWER_MAX));
+    }
+
+    auto projectConfig = registry->resolve<ProjectConfig>(DependencyType::project_config);
+    projectConfig->setWiFiTxPower(static_cast<uint8_t>(power));
+
+    // apply right away if the radio is running, otherwise it gets applied the next time it starts
+    auto wifiManager = registry->resolve<WiFiManager>(DependencyType::wifi_manager);
+    wifi_mode_t mode;
+    if (wifiManager && esp_wifi_get_mode(&mode) == ESP_OK && wifiManager->ApplyTxPower() != ESP_OK)
+    {
+        return CommandResult::getErrorResult("Config updated, but applying the TX power failed");
+    }
 
     return CommandResult::getSuccessResult("Config updated");
 }

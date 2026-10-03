@@ -50,6 +50,7 @@ enum class CommandType
     GET_BATTERY_STATUS,
     GET_WHO_AM_I,
     GET_TEMPERATURE,
+    UPDATE_WIFI_TX_POWER,
 };
 
 class CommandManager
