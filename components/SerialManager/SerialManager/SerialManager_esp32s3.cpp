@@ -32,7 +32,7 @@ void usb_serial_jtag_write_bytes_chunked(const char* data, size_t len, size_t ti
 void SerialManager::try_receive()
 {
     static auto current_position = 0;
-    int len = usb_serial_jtag_read_bytes(this->temp_data, 256, 1000 / 20);
+    int len = usb_serial_jtag_read_bytes(this->temp_data, SERIAL_READ_CHUNK_SIZE, 1000 / 20);
 
     // If driver is uninstalled or an error occurs, abort read gracefully
     if (len < 0)
