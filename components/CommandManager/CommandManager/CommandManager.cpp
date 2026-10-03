@@ -28,6 +28,7 @@ std::unordered_map<std::string, CommandType> commandTypeMap = {
     {"get_led_current", CommandType::GET_LED_CURRENT},
     {"get_battery_status", CommandType::GET_BATTERY_STATUS},
     {"get_who_am_i", CommandType::GET_WHO_AM_I},
+    {"get_temperature", CommandType::GET_TEMPERATURE},
 };
 
 std::function<CommandResult()> CommandManager::createCommand(const CommandType type, const nlohmann::json& json) const
@@ -86,6 +87,8 @@ std::function<CommandResult()> CommandManager::createCommand(const CommandType t
         return [this] { return getBatteryStatusCommand(this->registry); };
     case CommandType::GET_WHO_AM_I:
         return [this] { return getInfoCommand(this->registry); };
+    case CommandType::GET_TEMPERATURE:
+        return getTemperatureCommand;
     default:
         return nullptr;
     }

@@ -214,6 +214,13 @@ CommandResult getWiFiStatusCommand(std::shared_ptr<DependencyRegistry> registry)
         }
     }
 
+    // asked from the driver directly, it only succeeds while associated
+    wifi_ap_record_t ap_info;
+    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK)
+    {
+        result["rssi"] = ap_info.rssi;
+    }
+
     return CommandResult::getSuccessResult(result);
 }
 

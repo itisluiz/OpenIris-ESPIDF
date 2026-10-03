@@ -30,3 +30,5 @@ CommandResult getBatteryStatusCommand(std::shared_ptr<DependencyRegistry> regist
 
 // General info
 CommandResult getInfoCommand(std::shared_ptr<DependencyRegistry> registry);
+
+CommandResult getTemperatureCommand();

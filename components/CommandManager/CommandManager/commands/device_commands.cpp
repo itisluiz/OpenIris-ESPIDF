@@ -3,6 +3,11 @@
 #include "LEDManager.hpp"
 #include "MonitoringManager.hpp"
 #include "esp_mac.h"
+#include "soc/soc_caps.h"
+
+#if SOC_TEMP_SENSOR_SUPPORTED
+#include "driver/temperature_sensor.h"
+#endif
 
 CommandResult setDeviceModeCommand(std::shared_ptr<DependencyRegistry> registry, const nlohmann::json& json)
 {
@@ -263,4 +268,58 @@ CommandResult getInfoCommand(std::shared_ptr<DependencyRegistry> /*registry*/)
         {"version", ver},
     };
     return CommandResult::getSuccessResult(json);
+}
+
+#if SOC_TEMP_SENSOR_SUPPORTED
+static temperature_sensor_handle_t getTemperatureSensor()
+{
+    // installed on first use and kept enabled, the sensor is only read when asked for
+    static temperature_sensor_handle_t handle = []
+    {
+        temperature_sensor_handle_t sensor = nullptr;
+        // the 20-100C range covers a board running hot, at the cost of a bit of accuracy below 20C
+        temperature_sensor_config_t config = {};
+        config.range_min = 20;
+        config.range_max = 100;
+        config.clk_src = TEMPERATURE_SENSOR_CLK_SRC_DEFAULT;
+        if (temperature_sensor_install(&config, &sensor) != ESP_OK)
+        {
+            return static_cast<temperature_sensor_handle_t>(nullptr);
+        }
+
+        if (temperature_sensor_enable(sensor) != ESP_OK)
+        {
+            temperature_sensor_uninstall(sensor);
+            return static_cast<temperature_sensor_handle_t>(nullptr);
+        }
+
+        return sensor;
+    }();
+
+    return handle;
+}
+#endif
+
+CommandResult getTemperatureCommand()
+{
+#if SOC_TEMP_SENSOR_SUPPORTED
+    const auto sensor = getTemperatureSensor();
+    if (!sensor)
+    {
+        return CommandResult::getErrorResult("Temperature sensor unavailable");
+    }
+
+    float temperature_c = 0;
+    if (temperature_sensor_get_celsius(sensor, &temperature_c) != ESP_OK)
+    {
+        return CommandResult::getErrorResult("Failed to read the temperature sensor");
+    }
+
+    const auto json = nlohmann::json{
+        {"temperature_c", std::format("{:.1f}", static_cast<double>(temperature_c))},
+    };
+    return CommandResult::getSuccessResult(json);
+#else
+    return CommandResult::getErrorResult("Not supported on this chip");
+#endif
 }
