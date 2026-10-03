@@ -144,7 +144,7 @@ void WiFiManager::SetCredentials(const char* ssid, const std::vector<uint8_t> bs
 
     // Log what we're trying to connect to with detailed debugging
     ESP_LOGI(WIFI_MANAGER_TAG, "Setting credentials for SSID: '%s' (length: %d)", ssid, (int)strlen(ssid));
-    ESP_LOGI(WIFI_MANAGER_TAG, "Password: '%s' (length: %d)", password, (int)strlen(password));
+    ESP_LOGI(WIFI_MANAGER_TAG, "Password length: %d", (int)strlen(password));
     ESP_LOGI(WIFI_MANAGER_TAG, "Auth mode: %d, PMF capable: %d", _wifi_cfg.sta.threshold.authmode, _wifi_cfg.sta.pmf_cfg.capable);
 }
 
@@ -177,7 +177,7 @@ void WiFiManager::ConnectWithHardcodedCredentials()
      * happened. */
     if (bits & WIFI_CONNECTED_BIT)
     {
-        ESP_LOGI(WIFI_MANAGER_TAG, "connected to ap SSID:%p password:%p", _wifi_cfg.sta.ssid, _wifi_cfg.sta.password);
+        ESP_LOGI(WIFI_MANAGER_TAG, "connected to ap SSID:%s", reinterpret_cast<const char*>(_wifi_cfg.sta.ssid));
 
         event.value = WiFiState_e::WiFiState_Connected;
         xQueueSend(this->eventQueue, &event, 10);
@@ -185,7 +185,7 @@ void WiFiManager::ConnectWithHardcodedCredentials()
 
     else if (bits & WIFI_FAIL_BIT)
     {
-        ESP_LOGE(WIFI_MANAGER_TAG, "Failed to connect to SSID:%p, password:%p", _wifi_cfg.sta.ssid, _wifi_cfg.sta.password);
+        ESP_LOGE(WIFI_MANAGER_TAG, "Failed to connect to SSID:%s", reinterpret_cast<const char*>(_wifi_cfg.sta.ssid));
 
         event.value = WiFiState_e::WiFiState_Error;
         xQueueSend(this->eventQueue, &event, 10);
