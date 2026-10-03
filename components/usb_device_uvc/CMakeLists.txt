@@ -1,3 +1,11 @@
+# USB device support only exists on these targets. Register an empty component everywhere else,
+# so the same source tree builds for every board without moving this component around
+set(USB_DEVICE_UVC_TARGETS esp32s2 esp32s3 esp32p4)
+if(NOT "${IDF_TARGET}" IN_LIST USB_DEVICE_UVC_TARGETS)
+    idf_component_register()
+    return()
+endif()
+
 idf_component_register(SRCS usb_device_uvc.c
                     INCLUDE_DIRS "include"
                     REQUIRES usb esp_timer)

@@ -104,11 +104,22 @@ CommandResult startStreamingCommand()
     // from *inside* the serial handler, we'd deadlock.
     // we can just pass nullptr to the vtaskdelete(),
     // but then we won't get any response, so we schedule a timer instead
-    esp_timer_create_args_t args{.callback = activateStreaming, .arg = nullptr, .name = "activateStreaming"};
+    // the timer is created once and reused, one-shot timers are not freed after they fire
+    static esp_timer_handle_t activateStreamingTimer = nullptr;
+    if (activateStreamingTimer == nullptr)
+    {
+        esp_timer_create_args_t args{
+            .callback = activateStreaming, .arg = nullptr, .dispatch_method = ESP_TIMER_TASK, .name = "activateStreaming", .skip_unhandled_events = false};
+        if (esp_timer_create(&args, &activateStreamingTimer) != ESP_OK)
+        {
+            activateStreamingTimer = nullptr;
+            return CommandResult::getErrorResult("Failed to schedule streaming start");
+        }
+    }
 
-    esp_timer_handle_t activateStreamingTimer;
-    esp_timer_create(&args, &activateStreamingTimer);
-    esp_timer_start_once(activateStreamingTimer, pdMS_TO_TICKS(150));
+    // restart the timer if it's already pending, the timeout is in microseconds
+    esp_timer_stop(activateStreamingTimer);
+    esp_timer_start_once(activateStreamingTimer, 150 * 1000);
     // streamServer.startStreamServer();
     return CommandResult::getSuccessResult("Streaming starting");
 }

@@ -1,4 +1,6 @@
 #include "config_commands.hpp"
+#include <array>
+#include <string_view>
 
 CommandResult saveConfigCommand(std::shared_ptr<DependencyRegistry> registry)
 {
@@ -18,11 +20,13 @@ CommandResult getConfigCommand(std::shared_ptr<DependencyRegistry> registry)
 
 CommandResult resetConfigCommand(std::shared_ptr<DependencyRegistry> registry, const nlohmann::json& json)
 {
-    std::array<std::string, 4> supported_sections = {
+    // the array size has to match the number of sections, otherwise the leftover slots are empty strings
+    // which would make an empty section look supported
+    constexpr std::array<std::string_view, 1> supported_sections = {
         "all",
     };
 
-    if (!json.contains("section"))
+    if (!json.contains("section") || !json["section"].is_string())
     {
         return CommandResult::getErrorResult("Invalid payload - missing section");
     }

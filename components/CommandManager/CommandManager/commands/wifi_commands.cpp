@@ -1,6 +1,33 @@
 #include "wifi_commands.hpp"
+#include <cctype>
+#include <string_view>
 #include "esp_netif.h"
 #include "sdkconfig.h"
+
+// format is XX:XX:XX:XX:XX:XX, an empty string means we don't care about the BSSID
+static bool isValidBSSID(std::string_view bssid)
+{
+    if (bssid.empty())
+    {
+        return true;
+    }
+
+    if (bssid.length() != 17)
+    {
+        return false;
+    }
+
+    for (size_t i = 0; i < bssid.length(); i++)
+    {
+        const bool is_separator_position = i % 3 == 2;
+        if (is_separator_position ? bssid[i] != ':' : !std::isxdigit(static_cast<unsigned char>(bssid[i])))
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
 
 CommandResult setWiFiCommand(std::shared_ptr<DependencyRegistry> registry, const nlohmann::json& json)
 {
@@ -9,6 +36,11 @@ CommandResult setWiFiCommand(std::shared_ptr<DependencyRegistry> registry, const
 #endif
 
     auto payload = json.get<WifiPayload>();
+    if (!payload.is_valid)
+    {
+        return CommandResult::getErrorResult("Invalid payload");
+    }
+
     if (payload.name.empty())
     {
         payload.name = std::string("main");
@@ -19,10 +51,8 @@ CommandResult setWiFiCommand(std::shared_ptr<DependencyRegistry> registry, const
         return CommandResult::getErrorResult("Invalid payload: missing SSID");
     }
 
-    // format is XX:XX:XX:XX:XX:XX
     const std::string bssid = payload.bssid.has_value() ? payload.bssid.value() : "";
-    const auto bssid_len = bssid.length();
-    if (bssid_len > 0 && bssid_len != 17)
+    if (!isValidBSSID(bssid))
     {
         return CommandResult::getErrorResult("BSSID is malformed");
     }
@@ -40,7 +70,7 @@ CommandResult deleteWiFiCommand(std::shared_ptr<DependencyRegistry> registry, co
 #endif
 
     const auto payload = json.get<deleteNetworkPayload>();
-    if (payload.name.empty())
+    if (!payload.is_valid || payload.name.empty())
         return CommandResult::getErrorResult("Invalid payload");
 
     auto projectConfig = registry->resolve<ProjectConfig>(DependencyType::project_config);
@@ -56,18 +86,19 @@ CommandResult updateWiFiCommand(std::shared_ptr<DependencyRegistry> registry, co
 #endif
 
     auto payload = json.get<UpdateWifiPayload>();
+    if (!payload.is_valid)
+    {
+        return CommandResult::getErrorResult("Invalid payload");
+    }
+
     if (payload.name.empty())
     {
         return CommandResult::getErrorResult("Invalid payload - missing network name");
     }
 
-    if (payload.bssid.has_value())
+    if (payload.bssid.has_value() && !isValidBSSID(payload.bssid.value()))
     {
-        auto bssid_len = payload.bssid.value().length();
-        if (bssid_len > 0 && bssid_len != 11)
-        {
-            return CommandResult::getErrorResult("BSSID is malformed");
-        }
+        return CommandResult::getErrorResult("BSSID is malformed");
     }
 
     auto projectConfig = registry->resolve<ProjectConfig>(DependencyType::project_config);
@@ -94,13 +125,35 @@ CommandResult updateAPWiFiCommand(std::shared_ptr<DependencyRegistry> registry, 
 #endif
 
     const auto payload = json.get<UpdateAPWiFiPayload>();
+    if (!payload.is_valid)
+    {
+        return CommandResult::getErrorResult("Invalid payload");
+    }
 
     auto projectConfig = registry->resolve<ProjectConfig>(DependencyType::project_config);
     const auto previousAPConfig = projectConfig->getAPWifiConfig();
 
-    projectConfig->setAPWifiConfig(payload.ssid.has_value() ? payload.ssid.value() : previousAPConfig.ssid,
-                                   payload.password.has_value() ? payload.password.value() : previousAPConfig.password,
-                                   payload.channel.has_value() ? payload.channel.value() : previousAPConfig.channel);
+    const auto ssid = payload.ssid.has_value() ? payload.ssid.value() : previousAPConfig.ssid;
+    const auto password = payload.password.has_value() ? payload.password.value() : previousAPConfig.password;
+    const auto channel = payload.channel.has_value() ? payload.channel.value() : previousAPConfig.channel;
+
+    // these are the limits of the ESP soft-AP config, the AP is started from these values on the next boot
+    if (ssid.empty() || ssid.length() > 32)
+    {
+        return CommandResult::getErrorResult("Invalid payload - AP SSID must be between 1 and 32 characters");
+    }
+
+    if (!password.empty() && (password.length() < 8 || password.length() > 63))
+    {
+        return CommandResult::getErrorResult("Invalid payload - AP password must be empty or between 8 and 63 characters");
+    }
+
+    if (channel > 13)
+    {
+        return CommandResult::getErrorResult("Invalid payload - AP channel must be between 0 (auto) and 13");
+    }
+
+    projectConfig->setAPWifiConfig(ssid, password, channel);
 
     return CommandResult::getSuccessResult("Config updated");
 }
@@ -145,6 +198,8 @@ CommandResult getWiFiStatusCommand(std::shared_ptr<DependencyRegistry> registry)
         result["status"] = "error";
         break;
     }
+
+    result["networks_configured"] = networks.size();
 
     if (wifiState == WiFiState_e::WiFiState_Connected)
     {

@@ -106,10 +106,13 @@ jobs:
         if: github.ref_type == 'tag'
         with:
           files: build/*.zip
-          prerelease: ${{contains(github.ref_type, 'rc')}}
+          # ref_name is the tag itself (e.g. 0.2.1rc0), ref_type is only ever 'tag' or 'branch'
+          prerelease: ${{contains(github.ref_name, 'rc')}}
 
   cleanup:
     needs: [setup, release]
+    # only tagged builds end up in a release, keep the artifacts of other runs (e.g. PRs) around for testing
+    if: github.ref_type == 'tag'
     strategy:
       fail-fast: false
       matrix: ${{fromJson(needs.setup.outputs.matrix)}}

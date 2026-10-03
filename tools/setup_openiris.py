@@ -115,13 +115,14 @@ class WiFiScanner:
         )
         # Convert timeout from seconds to milliseconds for the ESP
         timeout_ms = timeout * 1000
-        # Send timeout_ms in the command data AND as serial timeout
+        # give the device some headroom to send the response after its own scan timeout,
+        # otherwise a scan that takes the full time is reported as a timeout
         response = self.device.send_command(
-            "scan_networks", params={"timeout_ms": timeout_ms}, timeout=timeout
+            "scan_networks", params={"timeout_ms": timeout_ms}, timeout=timeout + 10
         )
         if has_command_failed(response):
             print(f"❌ Scan failed: {get_response_error(response)}")
-            return
+            return False
 
         channels_found = set()
         networks = response["results"][0]["result"]["data"]["networks"]
@@ -145,6 +146,7 @@ class WiFiScanner:
         print(
             f"✅ Found {len(self.networks)} networks on channels: {sorted(channels_found)}"
         )
+        return True
 
     def get_networks(self) -> list[WiFiNetwork]:
         return self.networks
@@ -155,7 +157,14 @@ def has_command_failed(result) -> bool:
 
 
 def get_response_error(result) -> str:
-    return result["results"][0]["result"]["data"]
+    # transport problems (timeouts, disconnects) and top level firmware errors come as {"error": ...},
+    # command failures as a result with an error status
+    if "error" in result:
+        return str(result["error"])
+    try:
+        return str(result["results"][0]["result"]["data"])
+    except (KeyError, IndexError, TypeError):
+        return str(result)
 
 
 def get_device_mode(device: OpenIrisDevice) -> dict:
@@ -169,7 +178,7 @@ def get_device_mode(device: OpenIrisDevice) -> dict:
 def get_led_duty_cycle(device: OpenIrisDevice) -> dict:
     command_result = device.send_command("get_led_duty_cycle")
     if has_command_failed(command_result):
-        print(f"❌ Failed to get LED duty cycle: {command_result['error']}")
+        print(f"❌ Failed to get LED duty cycle: {get_response_error(command_result)}")
         return {"duty_cycle": "unknown"}
     try:
         return {
@@ -186,7 +195,7 @@ def get_led_duty_cycle(device: OpenIrisDevice) -> dict:
 
 def get_mdns_name(device: OpenIrisDevice) -> dict:
     response = device.send_command("get_mdns_name")
-    if "error" in response:
+    if has_command_failed(response):
         print(f"❌ Failed to get device name: {get_response_error(response)}")
         return {"name": "unknown"}
 
@@ -272,7 +281,7 @@ def configure_device_name(device: OpenIrisDevice, *args, **kwargs):
         return
 
     response = device.send_command("set_mdns", {"hostname": name_choice})
-    if "error" in response:
+    if has_command_failed(response):
         print(f"❌ MDNS name setup failed: {get_response_error(response)}")
         return
 
@@ -283,7 +292,7 @@ def start_streaming(device: OpenIrisDevice, *args, **kwargs):
     print("🚀 Starting streaming mode...")
     response = device.send_command("start_streaming")
 
-    if "error" in response:
+    if has_command_failed(response):
         print(f"❌ Failed to start streaming: {get_response_error(response)}")
         return
 
@@ -305,14 +314,19 @@ def switch_device_mode_command(device: OpenIrisDevice, *args, **kwargs):
         return
 
     try:
-        mode = modes[int(mode_choice) - 1]
+        mode_idx = int(mode_choice) - 1
     except ValueError:
+        mode_idx = -1
+
+    if not 0 <= mode_idx < len(modes):
         print("❌ Invalid mode selection")
         return
 
+    mode = modes[mode_idx]
+
     command_result = device.send_command("switch_mode", {"mode": mode})
-    if "error" in command_result:
-        print(f"❌ Failed to switch mode: {command_result['error']}")
+    if has_command_failed(command_result):
+        print(f"❌ Failed to switch mode: {get_response_error(command_result)}")
         return
 
     print(f"✅ Device mode switched to '{mode}' successfully!")
@@ -334,6 +348,7 @@ def set_led_duty_cycle(device: OpenIrisDevice, *args, **kwargs):
             duty_cycle = int(desired_pwd)
         except ValueError:
             print("❌ Invalid input. Please enter a number between 0 and 100.")
+            continue
 
         if duty_cycle < 0 or duty_cycle > 100:
             print("❌ Duty cycle must be between 0 and 100.")
@@ -413,29 +428,27 @@ def restart_device_command(device: OpenIrisDevice, *args, **kwargs):
     print("💡 Please wait a few seconds for the device to reboot")
 
 
-def scan_networks(wifi_scanner: WiFiScanner, *args, **kwargs):
+def scan_networks(wifi_scanner: WiFiScanner, *args, **kwargs) -> bool:
     use_custom_timeout = (
         input("Should we use a custom scan timeout? (y/n)\n>> ").strip().lower() == "y"
     )
     if use_custom_timeout:
         timeout = input("Enter timeout in seconds (5-120) or back to go back\n>> ")
         if is_back(timeout):
-            return
+            return False
 
         try:
             timeout = int(timeout)
-            if 5 <= timeout <= 120:
-                print(
-                    f"🔍 Scanning for WiFi networks (this may take up to {timeout} seconds)..."
-                )
-                wifi_scanner.scan_networks(timeout)
-            else:
-                print("❌ Timeout must be between 5 and 120 seconds, using default")
-                wifi_scanner.scan_networks()
         except ValueError:
             print("❌ Invalid timeout")
-    else:
-        wifi_scanner.scan_networks()
+            return False
+
+        if 5 <= timeout <= 120:
+            return wifi_scanner.scan_networks(timeout)
+
+        print("❌ Timeout must be between 5 and 120 seconds, using default")
+
+    return wifi_scanner.scan_networks()
 
 
 def display_networks(wifi_scanner: WiFiScanner, *args, **kwargs):
@@ -468,18 +481,20 @@ def display_networks(wifi_scanner: WiFiScanner, *args, **kwargs):
         print(f"Ch{channel}: {channels[channel]} networks  ", end="")
 
 
-def configure_wifi(device: OpenIrisDevice, wifi_scanner: WiFiScanner, *args, **kwargs):
+def configure_wifi(
+    device: OpenIrisDevice, wifi_scanner: WiFiScanner, *args, **kwargs
+) -> bool:
     networks = wifi_scanner.get_networks()
     if not networks:
         print("❌ No networks available. Please scan first.")
-        return
+        return False
 
     display_networks(wifi_scanner, *args, **kwargs)
 
     while True:
         net_choice = input("\nEnter network number (or 'back'): ").strip()
         if is_back(net_choice):
-            break
+            return False
 
         try:
             net_idx = int(net_choice) - 1
@@ -501,7 +516,7 @@ def configure_wifi(device: OpenIrisDevice, wifi_scanner: WiFiScanner, *args, **k
             else:
                 password = input("Enter WiFi password (or 'back'): ")
                 if is_back(password):
-                    break
+                    return False
 
             print(f"🔧 Setting WiFi credentials for '{ssid}'...")
 
@@ -517,14 +532,14 @@ def configure_wifi(device: OpenIrisDevice, wifi_scanner: WiFiScanner, *args, **k
             response = device.send_command("set_wifi", params)
             if has_command_failed(response):
                 print(f"❌ WiFi setup failed: {get_response_error(response)}")
-                break
+                return False
 
             print("✅ WiFi configured successfully!")
             print("💡 Next steps:")
             print("   • Open WiFi menu to connect to WiFi (if needed)")
             print("   • Open WiFi menu to check WiFi status")
             print("   • Start streaming from the main menu when connected")
-            break
+            return True
         else:
             print("❌ Invalid network number")
 
@@ -533,9 +548,16 @@ def automatic_wifi_configuration(
     device: OpenIrisDevice, wifi_scanner: WiFiScanner, *args, **kwargs
 ):
     print("\n⚙️  Automatic WiFi setup starting...")
-    scan_networks(wifi_scanner, *args, **kwargs)
-    configure_wifi(device, wifi_scanner, *args, **kwargs)
-    attempt_wifi_connection(device)
+    if not scan_networks(wifi_scanner, *args, **kwargs):
+        print("❌ Automatic WiFi setup stopped, the network scan did not complete")
+        return
+
+    if not configure_wifi(device, wifi_scanner, *args, **kwargs):
+        print("❌ Automatic WiFi setup stopped, no network was configured")
+        return
+
+    if not attempt_wifi_connection(device):
+        return
 
     print("⏳ Connecting to WiFi, waiting for IP...")
     start = time.time()
@@ -565,9 +587,10 @@ def attempt_wifi_connection(device: OpenIrisDevice, *args, **kwargs):
     response = device.send_command("connect_wifi")
     if has_command_failed(response):
         print(f"❌ WiFi connection failed: {get_response_error(response)}")
-        return
+        return False
 
     print("✅ WiFi connection attempt started")
+    return True
 
 
 def check_wifi_status(device: OpenIrisDevice, *args, **kwargs):
@@ -604,12 +627,16 @@ def handle_menu(menu_context: dict | None = None) -> str:
 
 
 def valid_port(port: str):
-    if sys.platform == "windows":
+    # sys.platform is "win32" on every Windows version, including 64 bit ones
+    if sys.platform == "win32":
         if not port.startswith("COM"):
             raise argparse.ArgumentTypeError("Invalid port name. We only support COM ports")
     else:
-        if not port.startswith("/dev/tty"):
-            raise argparse.ArgumentTypeError("Invalid port name. Port must be in /dev/tty")
+        # /dev/cu.* is the preferred device on macOS, /dev/tty* everywhere else
+        if not port.startswith(("/dev/tty", "/dev/cu.")):
+            raise argparse.ArgumentTypeError(
+                "Invalid port name. Port must be a /dev/tty* or /dev/cu.* device"
+            )
     return port
 
 

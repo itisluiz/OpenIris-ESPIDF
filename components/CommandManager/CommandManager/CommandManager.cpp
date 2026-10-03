@@ -114,6 +114,11 @@ CommandManagerResponse CommandManager::executeFromJson(const std::string_view js
             return CommandManagerResponse({{"command", "Unknown command"}, {"error", "Missing command type"}});
         }
 
+        if (!commandData["command"].is_string())
+        {
+            return CommandManagerResponse({{"command", "Unknown command"}, {"error", "Command type must be a string"}});
+        }
+
         const auto commandName = commandData["command"].get<std::string>();
         if (!commandTypeMap.contains(commandName))
         {
@@ -135,7 +140,19 @@ CommandManagerResponse CommandManager::executeFromJson(const std::string_view js
 
 CommandManagerResponse CommandManager::executeFromType(const CommandType type, const std::string_view json) const
 {
-    const auto command = createCommand(type, json);
+    // the payload arrives as raw text (e.g. a REST request body), parse it so commands get an actual object.
+    // Commands without a payload get an empty body, treat that as an empty object
+    auto payload = nlohmann::json::object();
+    if (!json.empty())
+    {
+        if (!nlohmann::json::accept(json))
+        {
+            return CommandManagerResponse(nlohmann::json{{"error", "Initial JSON Parse - Invalid JSON"}});
+        }
+        payload = nlohmann::json::parse(json);
+    }
+
+    const auto command = createCommand(type, payload);
 
     if (command == nullptr)
     {

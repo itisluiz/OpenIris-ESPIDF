@@ -3,6 +3,10 @@
 CommandResult updateCameraCommand(std::shared_ptr<DependencyRegistry> registry, const nlohmann::json& json)
 {
     auto payload = json.get<UpdateCameraConfigPayload>();
+    if (!payload.is_valid)
+    {
+        return CommandResult::getErrorResult("Invalid payload");
+    }
 
     std::shared_ptr<ProjectConfig> projectConfig = registry->resolve<ProjectConfig>(DependencyType::project_config);
     auto oldConfig = projectConfig->getCameraConfig();

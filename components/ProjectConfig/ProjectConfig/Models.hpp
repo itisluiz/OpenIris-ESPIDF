@@ -235,12 +235,14 @@ struct AP_WiFiConfig_t : BaseConfigModel
 
     std::string ssid;
     std::string password;
-    uint8_t channel;
+    // 0 means we let the firmware pick the default channel
+    uint8_t channel = 0;
 
     void load()
     {
         this->ssid = this->pref->getString("apSSID", CONFIG_WIFI_AP_SSID);
-        this->password = this->pref->getString("apPassword", CONFIG_WIFI_AP_PASSWORD);
+        this->password = this->pref->getString("apPass", CONFIG_WIFI_AP_PASSWORD);
+        this->channel = this->pref->getUInt("apChannel", 0);
     };
 
     void save() const

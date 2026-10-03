@@ -38,6 +38,11 @@ esp_err_t StreamHelpers::stream(httpd_req_t* req)
     if (SendStreamEvent(eventQueue, StreamState_e::Stream_ON))
         stream_on_sent = true;
 
+    // how many captures in a row may fail before we give up on the stream.
+    // A single failing capture can already block for a while inside the camera driver, so keep this low
+    constexpr int MAX_CONSECUTIVE_CAPTURE_FAILURES = 10;
+    int consecutive_capture_failures = 0;
+
     while (true)
     {
         fb = esp_camera_fb_get();
@@ -45,13 +50,19 @@ esp_err_t StreamHelpers::stream(httpd_req_t* req)
         if (!fb)
         {
             ESP_LOGE(STREAM_SERVER_TAG, "Camera capture failed");
-            response = ESP_FAIL;
+            if (++consecutive_capture_failures >= MAX_CONSECUTIVE_CAPTURE_FAILURES)
+            {
+                ESP_LOGE(STREAM_SERVER_TAG, "Camera keeps failing, closing the stream");
+                response = ESP_FAIL;
+                break;
+            }
             // Don't break immediately, try to recover
             vTaskDelay(pdMS_TO_TICKS(10));
             continue;
         }
         else
         {
+            consecutive_capture_failures = 0;
             _timestamp.tv_sec = fb->timestamp.tv_sec;
             _timestamp.tv_usec = fb->timestamp.tv_usec;
             _jpg_buf_len = fb->len;

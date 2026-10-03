@@ -7,6 +7,9 @@
 static auto WIFI_MANAGER_TAG = "[WIFI_MANAGER]";
 
 int s_retry_num = 0;
+// set once we got an IP, from then on a dropped connection should be retried indefinitely.
+// While we're explicitly trying to connect it stays false, so the retry cap lets us fail over to the next network / AP
+static bool s_auto_reconnect = false;
 EventGroupHandle_t s_wifi_event_group;
 
 void WiFiManagerHelpers::event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
@@ -24,7 +27,12 @@ void WiFiManagerHelpers::event_handler(void* arg, esp_event_base_t event_base, i
         const auto* disconnected = static_cast<wifi_event_sta_disconnected_t*>(event_data);
         ESP_LOGI(WIFI_MANAGER_TAG, "Disconnect reason: %d", disconnected->reason);
 
-        if (s_retry_num < EXAMPLE_ESP_MAXIMUM_RETRY)
+        if (s_auto_reconnect)
+        {
+            esp_wifi_connect();
+            ESP_LOGI(WIFI_MANAGER_TAG, "lost connection to the AP, reconnecting");
+        }
+        else if (s_retry_num < EXAMPLE_ESP_MAXIMUM_RETRY)
         {
             esp_wifi_connect();
             s_retry_num++;
@@ -42,6 +50,7 @@ void WiFiManagerHelpers::event_handler(void* arg, esp_event_base_t event_base, i
         const auto* event = static_cast<ip_event_got_ip_t*>(event_data);
         ESP_LOGI(WIFI_MANAGER_TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
+        s_auto_reconnect = true;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
     }
 }
@@ -53,20 +62,31 @@ WiFiManager::WiFiManager(std::shared_ptr<ProjectConfig> deviceConfig, QueueHandl
 
 std::vector<uint8_t> WiFiManager::ParseBSSID(std::string_view bssid_string)
 {
-    return bssid_string
-           // We format the bssid/mac address as XX:XX:XX:XX:XX:XX
-           | std::views::split(':')
-           // Once we have that, we can convert each sub range into a proper uint8_t value
-           | std::views::transform(
-                 [](auto&& subrange) -> uint8_t
-                 {
-                     auto view = std::string_view(subrange);
-                     uint8_t result{};
-                     std::from_chars(view.begin(), view.end(), result, 16);
-                     return result;
-                 })
-           // and now group them into the vector we need
-           | std::ranges::to<std::vector<uint8_t>>();
+    // We format the bssid/mac address as XX:XX:XX:XX:XX:XX
+    // anything that isn't exactly 6 hex octets results in an empty vector, meaning we won't use the bssid
+    constexpr size_t BSSID_OCTETS = 6;
+    std::vector<uint8_t> bssid;
+    for (auto&& subrange : bssid_string | std::views::split(':'))
+    {
+        const auto view = std::string_view(subrange);
+        const auto view_end = view.data() + view.size();
+
+        uint8_t octet{};
+        const auto [parsed_end, error] = std::from_chars(view.data(), view_end, octet, 16);
+        if (view.empty() || error != std::errc() || parsed_end != view_end || bssid.size() == BSSID_OCTETS)
+        {
+            return {};
+        }
+
+        bssid.push_back(octet);
+    }
+
+    if (bssid.size() != BSSID_OCTETS)
+    {
+        return {};
+    }
+
+    return bssid;
 }
 
 void WiFiManager::SetCredentials(const char* ssid, const std::vector<uint8_t> bssid, const char* password, bool use_bssid)
@@ -84,8 +104,9 @@ void WiFiManager::SetCredentials(const char* ssid, const std::vector<uint8_t> bs
     memcpy(_wifi_cfg.sta.password, password, pass_len);
     _wifi_cfg.sta.password[pass_len] = '\0';
 
-    // if we can use bssid, just copy it. Parser makes sure we do not exceed 6 elements so we should be safe here
-    // if we fail to parse, the vec will be empty, so use_bssid won't be set
+    // only use the bssid if it's exactly as long as the field we're copying it into,
+    // the parser returns an empty vec for anything malformed, but let's not rely on that for memory safety
+    use_bssid = use_bssid && bssid.size() == sizeof(_wifi_cfg.sta.bssid);
     if (use_bssid)
     {
         std::copy(bssid.begin(), bssid.end(), _wifi_cfg.sta.bssid);
@@ -110,7 +131,7 @@ void WiFiManager::SetCredentials(const char* ssid, const std::vector<uint8_t> bs
 
     // OPTIMIZATION: Use fast scan instead of all channel scan for quicker connection
     _wifi_cfg.sta.scan_method = WIFI_FAST_SCAN;
-    _wifi_cfg.sta.bssid_set = use_bssid;  // Don't use specific BSSID
+    _wifi_cfg.sta.bssid_set = use_bssid;  // Only connect to the specific BSSID if one was provided
     _wifi_cfg.sta.channel = 0;            // Auto channel detection
 
     // Additional settings that might help with compatibility
@@ -123,12 +144,13 @@ void WiFiManager::SetCredentials(const char* ssid, const std::vector<uint8_t> bs
 
     // Log what we're trying to connect to with detailed debugging
     ESP_LOGI(WIFI_MANAGER_TAG, "Setting credentials for SSID: '%s' (length: %d)", ssid, (int)strlen(ssid));
-    ESP_LOGI(WIFI_MANAGER_TAG, "Password: '%s' (length: %d)", password, (int)strlen(password));
+    ESP_LOGI(WIFI_MANAGER_TAG, "Password length: %d", (int)strlen(password));
     ESP_LOGI(WIFI_MANAGER_TAG, "Auth mode: %d, PMF capable: %d", _wifi_cfg.sta.threshold.authmode, _wifi_cfg.sta.pmf_cfg.capable);
 }
 
 void WiFiManager::ConnectWithHardcodedCredentials()
 {
+    s_auto_reconnect = false;
     SystemEvent event = {EventSource::WIFI, WiFiState_e::WiFiState_ReadyToConnect};
     const auto bssid = this->ParseBSSID(std::string_view(CONFIG_WIFI_BSSID));
     this->SetCredentials(CONFIG_WIFI_SSID, bssid, CONFIG_WIFI_PASSWORD, bssid.size());
@@ -155,7 +177,7 @@ void WiFiManager::ConnectWithHardcodedCredentials()
      * happened. */
     if (bits & WIFI_CONNECTED_BIT)
     {
-        ESP_LOGI(WIFI_MANAGER_TAG, "connected to ap SSID:%p password:%p", _wifi_cfg.sta.ssid, _wifi_cfg.sta.password);
+        ESP_LOGI(WIFI_MANAGER_TAG, "connected to ap SSID:%s", reinterpret_cast<const char*>(_wifi_cfg.sta.ssid));
 
         event.value = WiFiState_e::WiFiState_Connected;
         xQueueSend(this->eventQueue, &event, 10);
@@ -163,7 +185,7 @@ void WiFiManager::ConnectWithHardcodedCredentials()
 
     else if (bits & WIFI_FAIL_BIT)
     {
-        ESP_LOGE(WIFI_MANAGER_TAG, "Failed to connect to SSID:%p, password:%p", _wifi_cfg.sta.ssid, _wifi_cfg.sta.password);
+        ESP_LOGE(WIFI_MANAGER_TAG, "Failed to connect to SSID:%s", reinterpret_cast<const char*>(_wifi_cfg.sta.ssid));
 
         event.value = WiFiState_e::WiFiState_Error;
         xQueueSend(this->eventQueue, &event, 10);
@@ -176,6 +198,7 @@ void WiFiManager::ConnectWithHardcodedCredentials()
 
 void WiFiManager::ConnectWithStoredCredentials()
 {
+    s_auto_reconnect = false;
     SystemEvent event = {EventSource::WIFI, WiFiState_e::WiFiState_ReadyToConnect};
 
     auto const networks = this->deviceConfig->getWifiConfigs();
@@ -252,15 +275,34 @@ void WiFiManager::SetupAccessPoint()
 
     ESP_ERROR_CHECK(esp_wifi_init(&esp_wifi_ap_init_config));
 
-    wifi_config_t ap_wifi_config = {
-        .ap =
-            {
-                .ssid = CONFIG_WIFI_AP_SSID,
-                .password = CONFIG_WIFI_AP_PASSWORD,
-                .max_connection = 1,
+    const auto& apConfig = this->deviceConfig->getAPWifiConfig();
+    wifi_config_t ap_wifi_config = {};
 
-            },
-    };
+    const std::string ssid = apConfig.ssid.empty() ? std::string(CONFIG_WIFI_AP_SSID) : apConfig.ssid;
+    const size_t ssid_len = std::min(ssid.length(), sizeof(ap_wifi_config.ap.ssid));
+    memcpy(ap_wifi_config.ap.ssid, ssid.c_str(), ssid_len);
+    ap_wifi_config.ap.ssid_len = ssid_len;
+
+    // WPA2 requires 8 to 63 characters, anything else would make esp_wifi_set_config() fail and abort,
+    // so fall back to an open network instead of locking the user out of the device
+    const size_t pass_len = apConfig.password.length();
+    if (pass_len >= 8 && pass_len < sizeof(ap_wifi_config.ap.password))
+    {
+        memcpy(ap_wifi_config.ap.password, apConfig.password.c_str(), pass_len);
+        ap_wifi_config.ap.authmode = WIFI_AUTH_WPA2_PSK;
+    }
+    else
+    {
+        if (pass_len != 0)
+        {
+            ESP_LOGW(WIFI_MANAGER_TAG, "Stored AP password has an invalid length (%d), starting an open AP", (int)pass_len);
+        }
+        ap_wifi_config.ap.authmode = WIFI_AUTH_OPEN;
+    }
+
+    // channel 0 means no preference, valid channels are 1 to 13
+    ap_wifi_config.ap.channel = (apConfig.channel >= 1 && apConfig.channel <= 13) ? apConfig.channel : 1;
+    ap_wifi_config.ap.max_connection = 1;
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_wifi_config));
@@ -343,6 +385,7 @@ WiFiState_e WiFiManager::GetCurrentWiFiState()
 void WiFiManager::TryConnectToStoredNetworks()
 {
     ESP_LOGI(WIFI_MANAGER_TAG, "Manual WiFi connection attempt requested");
+    s_auto_reconnect = false;
 
     // Check current WiFi mode
     wifi_mode_t current_mode;

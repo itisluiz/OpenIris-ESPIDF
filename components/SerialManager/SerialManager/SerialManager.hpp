@@ -20,6 +20,9 @@
 #define BUF_SIZE (1024)
 #endif
 
+// size of a single read from the serial driver, temp_data is allocated with this size
+#define SERIAL_READ_CHUNK_SIZE (256)
+
 extern "C" void tud_cdc_rx_cb(uint8_t itf);
 extern "C" void tud_cdc_line_state_cb(uint8_t itf, bool dtr, bool rts);
 

@@ -1,5 +1,5 @@
 import time
-from tests.utils import has_command_failed, DetectPortChange
+from tests.utils import has_command_failed, has_command_been_rejected, DetectPortChange
 import pytest
 
 
@@ -640,3 +640,120 @@ def test_update_camera(get_openiris_device, payload):
     device = get_openiris_device()
     result = device.send_command("update_camera", payload)
     assert not has_command_failed(result)
+
+
+def test_command_with_non_string_type_is_rejected(get_openiris_device):
+    device = get_openiris_device()
+    command_result = device.send_command(123)
+    assert command_result.get("error") == "Command type must be a string"
+
+    # make sure the board didn't crash
+    assert not has_command_failed(device.send_command("ping"))
+
+
+@pytest.mark.parametrize(
+    "command,payload",
+    (
+        ("set_wifi", {}),
+        (
+            "set_wifi",
+            {"name": 1, "ssid": "a", "password": "b", "channel": 0, "power": 0},
+        ),
+        (
+            "set_wifi",
+            {"name": "a", "ssid": "a", "password": "b", "channel": "0", "power": 0},
+        ),
+        ("update_wifi", {}),
+        ("update_wifi", {"name": "main", "channel": "1"}),
+        ("delete_network", {}),
+        ("delete_network", {"name": 1}),
+        ("set_mdns", {"hostname": 5}),
+        ("update_camera", {"vflip": "yes"}),
+        ("update_ap_wifi", {"ssid": 1}),
+        ("reset_config", {"section": 1}),
+        ("reset_config", {"section": ""}),
+    ),
+)
+def test_malformed_payload_is_rejected(get_openiris_device, command, payload):
+    device = get_openiris_device()
+    command_result = device.send_command(command, payload)
+    # the firmware has to answer with an error, a timeout means the payload crashed it
+    assert has_command_been_rejected(command_result)
+
+    # make sure the board didn't crash
+    assert not has_command_failed(device.send_command("ping"))
+
+
+def test_oversized_command_does_not_crash(get_openiris_device):
+    device = get_openiris_device()
+    # larger than the firmware's 1024 byte command buffer
+    command_result = device.send_command("set_mdns", {"hostname": "a" * 1500})
+    assert has_command_failed(command_result)
+    assert command_result.get("error") != "Command timeout"
+
+    # the leftover part of the command gets its own error response, let it arrive before we ping
+    time.sleep(1)
+    assert not has_command_failed(device.send_command("ping"))
+
+
+@pytest.mark.has_capability("wireless")
+@pytest.mark.parametrize(
+    "bssid",
+    (
+        "1:2:3:4:5:6:7:8:9",  # right length, too many octets
+        "ZZ:ZZ:ZZ:ZZ:ZZ:ZZ",  # right shape, not hex
+        "99:99:99:99:99",  # too short
+    ),
+)
+def test_set_wifi_malformed_bssid(ensure_board_in_mode, get_openiris_device, bssid):
+    device = ensure_board_in_mode("wifi", get_openiris_device())
+    params = {
+        "name": "main",
+        "ssid": "PleaseDontBeARealNetwork",
+        "bssid": bssid,
+        "password": "AndThePasswordIsFake",
+        "channel": 0,
+        "power": 0,
+    }
+    set_wifi_result = device.send_command("set_wifi", params)
+    assert has_command_been_rejected(set_wifi_result)
+
+
+@pytest.mark.has_capability("wireless")
+def test_update_wifi_with_bssid(ensure_board_in_mode, get_openiris_device):
+    device = ensure_board_in_mode("wifi", get_openiris_device())
+    params = {
+        "name": "anotherNetwork",
+        "ssid": "PleaseDontBeARealNetwork",
+        "bssid": "",
+        "password": "AndThePasswordIsFake",
+        "channel": 0,
+        "power": 0,
+    }
+    set_wifi_result = device.send_command("set_wifi", params)
+    assert not has_command_failed(set_wifi_result)
+
+    result = device.send_command(
+        "update_wifi", {"name": "anotherNetwork", "bssid": "99:99:99:99:99:99"}
+    )
+    assert not has_command_failed(result)
+
+    # and not to break other tests, clean up
+    device.send_command("reset_config", {"section": "all"})
+    device.send_command("restart_device")
+
+
+@pytest.mark.parametrize(
+    "payload",
+    (
+        {"ssid": "testAP", "password": "short"},  # WPA2 needs at least 8 characters
+        {"ssid": "testAP", "password": "a" * 64},  # and at most 63
+        {"ssid": ""},
+        {"ssid": "a" * 33},
+        {"ssid": "testAP", "channel": 14},
+    ),
+)
+def test_update_ap_wifi_invalid_config(get_openiris_device, payload):
+    device = get_openiris_device()
+    result = device.send_command("update_ap_wifi", payload)
+    assert has_command_been_rejected(result)

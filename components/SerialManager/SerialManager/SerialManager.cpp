@@ -5,8 +5,9 @@
 SerialManager::SerialManager(std::shared_ptr<CommandManager> commandManager, esp_timer_handle_t* timerHandle)
     : commandManager(commandManager), timerHandle(timerHandle)
 {
-    this->data = static_cast<uint8_t*>(malloc(BUF_SIZE));
-    this->temp_data = static_cast<uint8_t*>(malloc(256));
+    // +1 to always leave room for the null terminator
+    this->data = static_cast<uint8_t*>(malloc(BUF_SIZE + 1));
+    this->temp_data = static_cast<uint8_t*>(malloc(SERIAL_READ_CHUNK_SIZE));
 }
 
 // Function to notify that a command was received during startup

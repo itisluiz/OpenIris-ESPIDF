@@ -13,6 +13,14 @@ struct async_resp_arg
     int fd;
 };
 
+// a single formatted log line, allocated per message and freed by the httpd work item that sends it
+struct ws_log_message
+{
+    async_resp_arg client;
+    size_t len;
+    char* text;
+};
+
 namespace LoggerHelpers
 {
 void ws_async_send(void* arg);
@@ -21,7 +29,6 @@ void ws_async_send(void* arg);
 class WebSocketLogger
 {
     async_resp_arg connected_socket_client{};
-    char ws_log_buffer[WS_LOG_BUFFER_LEN]{};
 
    public:
     WebSocketLogger();
@@ -30,7 +37,6 @@ class WebSocketLogger
     esp_err_t register_socket_client(httpd_req_t* req);
     void unregister_socket_client();
     bool is_client_connected();
-    char* get_websocket_log_buffer();
 };
 
 extern WebSocketLogger webSocketLogger;

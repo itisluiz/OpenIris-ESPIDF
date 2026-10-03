@@ -97,12 +97,13 @@ void RestAPI::handle_request(struct mg_connection* connection, int event, void* 
 
         auto const base_request_params = this->routes.at(uri);
 
-        auto* context = new RequestContext{
+        // the request is handled synchronously, so the context can live on the stack
+        auto context = RequestContext{
             .connection = connection,
             .method = std::string(message->method.buf, message->method.len),
             .body = std::string(message->body.buf, message->body.len),
         };
-        this->handle_endpoint_command(context, base_request_params.allowed_method, base_request_params.command_type, base_request_params.success_code,
+        this->handle_endpoint_command(&context, base_request_params.allowed_method, base_request_params.command_type, base_request_params.success_code,
                                       base_request_params.error_code);
     }
 }
@@ -138,5 +139,6 @@ void RestAPI::handle_endpoint_command(RequestContext* context, std::string allow
 
     const nlohmann::json result = command_manager->executeFromType(command_type, context->body);
     const auto code = getIsSuccess(result) ? success_code : error_code;
-    mg_http_reply(context->connection, code, JSON_RESPONSE, result.dump().c_str());
+    // the body goes through %s, it may contain '%' (e.g. in an SSID) which mongoose would treat as format directives
+    mg_http_reply(context->connection, code, JSON_RESPONSE, "%s", result.dump().c_str());
 }

@@ -10,16 +10,8 @@ void to_json(nlohmann::json& j, const WifiPayload& payload)
 
 void from_json(const nlohmann::json& j, WifiPayload& payload)
 {
-    payload.name = j.at("name").get<std::string>();
-    payload.ssid = j.at("ssid").get<std::string>();
-    payload.password = j.at("password").get<std::string>();
-    payload.channel = j.at("channel").get<uint8_t>();
-    payload.power = j.at("power").get<uint8_t>();
-
-    if (j.contains("bssid"))
-    {
-        payload.bssid = j.at("bssid").get<std::string>();
-    }
+    payload.is_valid = readField(j, "name", payload.name) && readField(j, "ssid", payload.ssid) && readField(j, "password", payload.password) &&
+                       readField(j, "channel", payload.channel) && readField(j, "power", payload.power) && readField(j, "bssid", payload.bssid);
 }
 
 void to_json(nlohmann::json& j, const UpdateWifiPayload& payload)
@@ -32,31 +24,18 @@ void to_json(nlohmann::json& j, const UpdateWifiPayload& payload)
 
 void from_json(const nlohmann::json& j, UpdateWifiPayload& payload)
 {
-    payload.name = j.at("name").get<std::string>();
-    if (j.contains("ssid"))
-    {
-        payload.ssid = j.at("ssid").get<std::string>();
-    }
+    payload.is_valid = readField(j, "name", payload.name) && readField(j, "ssid", payload.ssid) && readField(j, "bssid", payload.bssid) &&
+                       readField(j, "password", payload.password) && readField(j, "channel", payload.channel) && readField(j, "power", payload.power);
+}
 
-    if (j.contains("bssid"))
-    {
-        payload.bssid = j.at("bssid").get<std::string>();
-    }
+void to_json(nlohmann::json& j, const deleteNetworkPayload& payload)
+{
+    j = nlohmann::json{{"name", payload.name}};
+}
 
-    if (j.contains("password"))
-    {
-        payload.password = j.at("password").get<std::string>();
-    }
-
-    if (j.contains("channel"))
-    {
-        payload.channel = j.at("channel").get<uint8_t>();
-    }
-
-    if (j.contains("power"))
-    {
-        payload.power = j.at("power").get<uint8_t>();
-    }
+void from_json(const nlohmann::json& j, deleteNetworkPayload& payload)
+{
+    payload.is_valid = readField(j, "name", payload.name);
 }
 
 void to_json(nlohmann::json& j, const UpdateAPWiFiPayload& payload)
@@ -66,19 +45,7 @@ void to_json(nlohmann::json& j, const UpdateAPWiFiPayload& payload)
 
 void from_json(const nlohmann::json& j, UpdateAPWiFiPayload& payload)
 {
-    if (j.contains("ssid"))
-    {
-        payload.ssid = j.at("ssid").get<std::string>();
-    }
-
-    if (j.contains("password"))
-    {
-        payload.password = j.at("password").get<std::string>();
-    }
-    if (j.contains("channel"))
-    {
-        payload.channel = j.at("channel").get<uint8_t>();
-    }
+    payload.is_valid = readField(j, "ssid", payload.ssid) && readField(j, "password", payload.password) && readField(j, "channel", payload.channel);
 }
 
 void to_json(nlohmann::json& j, const UpdateCameraConfigPayload& payload)
@@ -90,24 +57,16 @@ void to_json(nlohmann::json& j, const UpdateCameraConfigPayload& payload)
 
 void from_json(const nlohmann::json& j, UpdateCameraConfigPayload& payload)
 {
-    if (j.contains("vflip"))
-    {
-        payload.vflip = j.at("vflip").get<uint8_t>();
-    }
-    if (j.contains("href"))
-    {
-        payload.href = j.at("href").get<uint8_t>();
-    }
-    if (j.contains("framesize"))
-    {
-        payload.framesize = j.at("framesize").get<uint8_t>();
-    }
-    if (j.contains("quality"))
-    {
-        payload.quality = j.at("quality").get<uint8_t>();
-    }
-    if (j.contains("brightness"))
-    {
-        payload.brightness = j.at("brightness").get<uint8_t>();
-    }
+    payload.is_valid = readField(j, "vflip", payload.vflip) && readField(j, "href", payload.href) && readField(j, "framesize", payload.framesize) &&
+                       readField(j, "quality", payload.quality) && readField(j, "brightness", payload.brightness);
+}
+
+void to_json(nlohmann::json& j, const MDNSPayload& payload)
+{
+    j = nlohmann::json{{"hostname", payload.hostname}};
+}
+
+void from_json(const nlohmann::json& j, MDNSPayload& payload)
+{
+    payload.is_valid = readField(j, "hostname", payload.hostname);
 }

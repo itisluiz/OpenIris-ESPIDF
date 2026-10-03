@@ -1,6 +1,6 @@
 import os
+import re
 import difflib
-import shutil
 import argparse
 from typing import Dict, Optional, List
 
@@ -13,15 +13,10 @@ ENDC = "\033[0m"
 BOARDS_DIR_NAME = "boards"
 SDKCONFIG_DEFAULTS_FILENAME = "sdkconfig.base_defaults"
 
-
-# some components are super platform specific.
-# to a point where building them with esp32 will fail every single time due to depndencies not supporting it
-# with our own components, we can ship some shims to keep things clean
-# but with those, unless we roll our own somehow, we're out of luck.
-# So, to make things simpler, when selecting for which board to build, we're gonna reconfigure the components
-# on the fly.
-PLATFORM_SPECIFIC_COMPONENTS = {"esp32s3": ["usb_device_uvc"]}
-PLATFORM_SPECIFIC_COMPONENTS_DIRS = {"esp32s3": "esp32s3"}
+# "# CONFIG_X is not set" lines disable an option, we store them under the option's key with this value
+# so a board disabling an option overrides the base's "CONFIG_X=y" instead of adding a second line for it
+NOT_SET = "<not set>"
+NOT_SET_PATTERN = re.compile(r"^#\s*(CONFIG_\w+) is not set$")
 
 
 def get_root_path() -> str:
@@ -30,11 +25,6 @@ def get_root_path() -> str:
 
 def get_boards_root() -> str:
     return os.path.join(get_root_path(), BOARDS_DIR_NAME)
-
-
-def get_config_platform(_parsed_config: dict) -> str:
-    # 1:-1 to strip quotes
-    return _parsed_config["CONFIG_IDF_TARGET"][1:-1]
 
 
 def enumerate_board_configs() -> Dict[str, str]:
@@ -154,13 +144,17 @@ def get_base_config_path() -> str:
 
 def parse_config(config_file) -> dict:
     config = {}
-    for line in config_file:
-        line = line.strip().split("=")
-        if len(line) == 2:
-            config[line[0]] = line[1]
+    for raw_line in config_file:
+        line = raw_line.strip()
+        if not_set := NOT_SET_PATTERN.match(line):
+            config[not_set.group(1)] = NOT_SET
+        elif line.startswith("#") or "=" not in line:
+            # other comments and empty lines carry no value, we're safe to store empty string there
+            config[line] = ""
         else:
-            # lines without value are usually comments, we're safe to store empty string there
-            config[line[0]] = ""
+            # values can contain '=' themselves (e.g. a WiFi password), only split on the first one
+            key, value = line.split("=", 1)
+            config[key.strip()] = value.strip()
     return config
 
 
@@ -194,56 +188,18 @@ def compute_diff(_parsed_base_config: dict, _parsed_board_config: dict) -> dict:
     return _diff
 
 
-def _move_directories(component: str, destination_path: str):
-    if os.path.exists(component):
-        shutil.move(component, destination_path)
-
-
-def handle_extra_components(old_platform: str, new_platform: str, dry_run: bool):
-    print(
-        f"{OKGREEN}Switching components configuration from platform:{ENDC} {OKBLUE}{old_platform}{ENDC} {OKGREEN}to platform:{ENDC} {OKBLUE}{new_platform}{ENDC}"
-    )
-
-    if old_platform == new_platform:
-        print(f"{OKGREEN}The platform is the same. Nothing to do here.{ENDC}")
-        return
-
-    old_platform_components = PLATFORM_SPECIFIC_COMPONENTS.get(old_platform, [])
-    new_platform_components = PLATFORM_SPECIFIC_COMPONENTS.get(new_platform, [])
-    if dry_run:
-        print(f"{OKGREEN}Would remove: {ENDC}")
-        for component in old_platform_components:
-            print(f"{OKBLUE}- {component} {ENDC}")
-
-        print(f"{OKGREEN}Would add: {ENDC}")
-        for component in new_platform_components:
-            print(f"{OKBLUE}- {component} {ENDC}")
-
-        return
-
-    components_path = os.path.join(get_root_path(), "components")
-
-    if old_base_dir := PLATFORM_SPECIFIC_COMPONENTS_DIRS.get(old_platform):
-        old_extra_components_path = os.path.join(
-            os.path.join(get_root_path(), "extra_components"), old_base_dir
+def warn_about_missing_platform_components():
+    # older versions of this script moved platform specific components out of components/ when switching
+    # to a platform that doesn't support them, and could lose them when switching back.
+    # They now build conditionally on the target and must always stay in components/
+    uvc_component_path = os.path.join(get_root_path(), "components", "usb_device_uvc")
+    if not os.path.isdir(uvc_component_path):
+        print(
+            f"{WARNING}components/usb_device_uvc is missing, probably moved by an older version of this script.{ENDC}"
         )
-        for component in old_platform_components:
-            component_path = os.path.join(components_path, component)
-            print(
-                f"{OKGREEN}Moving:{ENDC}{OKBLUE} {component}{ENDC} to {OKBLUE}{old_extra_components_path}{ENDC}"
-            )
-            _move_directories(component_path, old_extra_components_path)
-
-    if new_base_dir := PLATFORM_SPECIFIC_COMPONENTS_DIRS.get(new_platform):
-        new_extra_components_path = os.path.join(
-            os.path.join(get_root_path(), "extra_components"), new_base_dir
+        print(
+            f"{WARNING}Restore it with `git checkout -- components/usb_device_uvc` and delete the extra_components/ directory.{ENDC}"
         )
-        for component in new_platform_components:
-            component_path = os.path.join(new_extra_components_path, component)
-            print(
-                f"{OKGREEN}Moving:{ENDC}{OKBLUE} {component}{ENDC} to {OKBLUE}{components_path}{ENDC}"
-            )
-            _move_directories(component_path, components_path)
 
 
 def main():
@@ -287,7 +243,14 @@ def main():
         parsed_base_config = parse_config(base_config)
         parsed_board_config = parse_config(board_config)
 
-    new_board_config = {**parsed_base_config, **parsed_board_config}
+    # board values go after all base values instead of replacing them in place, a value written into the
+    # base's "Deprecated options" block (legacy option names) is ignored by kconfig when the new name is set
+    new_board_config = {
+        key: value
+        for key, value in parsed_base_config.items()
+        if key not in parsed_board_config
+    }
+    new_board_config.update(parsed_board_config)
     new_board_config = handle_wifi_config(new_board_config, parsed_main_config, args)
 
     if args.diff:
@@ -309,18 +272,16 @@ def main():
         print(f"{WARNING}Writing changes to main config file{ENDC}")
         with open(get_main_config_path(), "w") as main_config:
             for key, value in new_board_config.items():
-                if value:
+                if value == NOT_SET:
+                    main_config.write(f"# {key} is not set\n")
+                elif value:
                     main_config.write(f"{key}={value}\n")
                 else:
                     main_config.write(f"{key}\n")
     else:
         print(f"{WARNING}[DRY-RUN]{ENDC} Skipping writing to files")
 
-    handle_extra_components(
-        get_config_platform(parsed_main_config),
-        get_config_platform(new_board_config),
-        args.dry_run,
-    )
+    warn_about_missing_platform_components()
 
     print(
         f"{OKGREEN}Done. ESP-IDF is setup to build for:{ENDC} {OKBLUE}{normalized}{ENDC}"

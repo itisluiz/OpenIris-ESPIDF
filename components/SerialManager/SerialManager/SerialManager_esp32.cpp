@@ -47,7 +47,7 @@ void SerialManager::try_receive()
 {
     static auto current_position = 0;
     const auto uart_num = static_cast<uart_port_t>(CONFIG_UART_PORT_NUMBER);
-    int len = uart_read_bytes(uart_num, this->temp_data, BUF_SIZE, 1000 / 20);
+    int len = uart_read_bytes(uart_num, this->temp_data, SERIAL_READ_CHUNK_SIZE, 1000 / 20);
 
     // If driver is uninstalled or an error occurs, abort read gracefully
     if (len <= 0)
