@@ -19,7 +19,7 @@
 class CameraManager
 {
    private:
-    sensor_t* camera_sensor;
+    sensor_t* camera_sensor = nullptr;
     std::shared_ptr<ProjectConfig> projectConfig;
     QueueHandle_t eventQueue;
     camera_config_t config;
@@ -31,9 +31,9 @@ class CameraManager
     int setVFlip(int direction);
     int setHFlip(int direction);
     int setVieWindow(int offsetX, int offsetY, int outputX, int outputY);
+    void loadConfigData();
 
    private:
-    void loadConfigData();
     void setupCameraPinout();
     void setupCameraSensor();
 };
