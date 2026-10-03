@@ -7,6 +7,9 @@
 static auto WIFI_MANAGER_TAG = "[WIFI_MANAGER]";
 
 int s_retry_num = 0;
+// set once we got an IP, from then on a dropped connection should be retried indefinitely.
+// While we're explicitly trying to connect it stays false, so the retry cap lets us fail over to the next network / AP
+static bool s_auto_reconnect = false;
 EventGroupHandle_t s_wifi_event_group;
 
 void WiFiManagerHelpers::event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
@@ -24,7 +27,12 @@ void WiFiManagerHelpers::event_handler(void* arg, esp_event_base_t event_base, i
         const auto* disconnected = static_cast<wifi_event_sta_disconnected_t*>(event_data);
         ESP_LOGI(WIFI_MANAGER_TAG, "Disconnect reason: %d", disconnected->reason);
 
-        if (s_retry_num < EXAMPLE_ESP_MAXIMUM_RETRY)
+        if (s_auto_reconnect)
+        {
+            esp_wifi_connect();
+            ESP_LOGI(WIFI_MANAGER_TAG, "lost connection to the AP, reconnecting");
+        }
+        else if (s_retry_num < EXAMPLE_ESP_MAXIMUM_RETRY)
         {
             esp_wifi_connect();
             s_retry_num++;
@@ -42,6 +50,7 @@ void WiFiManagerHelpers::event_handler(void* arg, esp_event_base_t event_base, i
         const auto* event = static_cast<ip_event_got_ip_t*>(event_data);
         ESP_LOGI(WIFI_MANAGER_TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
         s_retry_num = 0;
+        s_auto_reconnect = true;
         xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
     }
 }
@@ -141,6 +150,7 @@ void WiFiManager::SetCredentials(const char* ssid, const std::vector<uint8_t> bs
 
 void WiFiManager::ConnectWithHardcodedCredentials()
 {
+    s_auto_reconnect = false;
     SystemEvent event = {EventSource::WIFI, WiFiState_e::WiFiState_ReadyToConnect};
     const auto bssid = this->ParseBSSID(std::string_view(CONFIG_WIFI_BSSID));
     this->SetCredentials(CONFIG_WIFI_SSID, bssid, CONFIG_WIFI_PASSWORD, bssid.size());
@@ -188,6 +198,7 @@ void WiFiManager::ConnectWithHardcodedCredentials()
 
 void WiFiManager::ConnectWithStoredCredentials()
 {
+    s_auto_reconnect = false;
     SystemEvent event = {EventSource::WIFI, WiFiState_e::WiFiState_ReadyToConnect};
 
     auto const networks = this->deviceConfig->getWifiConfigs();
@@ -374,6 +385,7 @@ WiFiState_e WiFiManager::GetCurrentWiFiState()
 void WiFiManager::TryConnectToStoredNetworks()
 {
     ESP_LOGI(WIFI_MANAGER_TAG, "Manual WiFi connection attempt requested");
+    s_auto_reconnect = false;
 
     // Check current WiFi mode
     wifi_mode_t current_mode;
